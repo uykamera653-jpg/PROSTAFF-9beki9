@@ -1,0 +1,260 @@
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../hooks/useTheme';
+import { useTranslation } from '../../hooks/useTranslation';
+import { useCompanies } from '../../hooks/useCompanies';
+import { useAuth } from '../../hooks/useAuth';
+import { useFavorites } from '../../hooks/useFavorites';
+import { CompanyCard } from '../../components/feature/CompanyCard';
+import { spacing, typography } from '../../constants/theme';
+import { Company } from '../../types';
+
+export default function CompaniesScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const { t } = useTranslation();
+  const { companies } = useCompanies();
+  const { user } = useAuth();
+  const { addFavorite, removeFavorite, isFavorite } = useFavorites();
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'rating' | 'newest'>('rating');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  const categories = [
+    { id: 'all', name: t.allCategories, icon: 'apps' },
+    { id: 'Yoqilg\'i yetkazish', name: 'Yoqilg\'i', icon: 'flame' },
+    { id: 'Eshik va rom o\'rnatish', name: 'Eshik', icon: 'home' },
+    { id: 'Tarjimonlik', name: 'Tarjima', icon: 'language' },
+    { id: 'Konditsioner o\'rnatish', name: 'Konditsioner', icon: 'snow' },
+    { id: 'Gilam yuvish', name: 'Gilam', icon: 'color-fill' },
+  ];
+
+  const handleCompanyPress = (companyId: string) => {
+    router.push({
+      pathname: '/company-detail',
+      params: { id: companyId },
+    });
+  };
+
+  const handleFavoritePress = async (companyId: string) => {
+    if (!user) return;
+    if (isFavorite(companyId, user.id)) {
+      await removeFavorite(companyId, user.id);
+    } else {
+      await addFavorite(companyId, 'company', user.id);
+    }
+  };
+
+  const filteredCompanies = companies
+    .filter((company) => {
+      const matchesSearch =
+        company.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        company.serviceType.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory =
+        selectedCategory === 'all' || company.serviceType === selectedCategory;
+      return matchesSearch && matchesCategory;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'rating') {
+        return b.rating - a.rating;
+      }
+      return 0;
+    });
+
+  const renderCompany = ({ item }: { item: Company }) => (
+    <CompanyCard
+      name={item.name}
+      serviceType={item.serviceType}
+      phoneNumber={item.phoneNumber}
+      address={item.address}
+      photoUrl={item.photoUrls[0]}
+      rating={item.rating}
+      isFavorite={user ? isFavorite(item.id, user.id) : false}
+      onPress={() => handleCompanyPress(item.id)}
+      onFavoritePress={() => handleFavoritePress(item.id)}
+    />
+  );
+
+  return (
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={[styles.header, { paddingTop: insets.top + spacing.md, backgroundColor: theme.surface }]}>
+        <Text style={[styles.appName, { color: theme.text }]}>{t.services}</Text>
+      </View>
+
+      <View style={styles.content}>
+        {/* Category Filter */}
+        <View style={styles.categoryContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryScroll}
+          >
+            {categories.map((category) => (
+              <TouchableOpacity
+                key={category.id}
+                style={[
+                  styles.categoryChip,
+                  {
+                    backgroundColor:
+                      selectedCategory === category.id
+                        ? theme.primary
+                        : theme.surface,
+                  },
+                ]}
+                onPress={() => setSelectedCategory(category.id)}
+              >
+                <Ionicons
+                  name={category.icon as any}
+                  size={18}
+                  color={
+                    selectedCategory === category.id
+                      ? '#FFFFFF'
+                      : theme.textSecondary
+                  }
+                />
+                <Text
+                  style={[
+                    styles.categoryChipText,
+                    {
+                      color:
+                        selectedCategory === category.id
+                          ? '#FFFFFF'
+                          : theme.text,
+                    },
+                  ]}
+                >
+                  {category.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        <View style={styles.searchContainer}>
+          <View style={[styles.searchBar, { backgroundColor: theme.surface }]}>
+            <Ionicons name="search" size={20} color={theme.textSecondary} />
+            <TextInput
+              style={[styles.searchInput, { color: theme.text }]}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder={t.searchPlaceholder}
+              placeholderTextColor={theme.textTertiary}
+            />
+            {searchQuery ? (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={20} color={theme.textSecondary} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={styles.filterRow}>
+          <Text style={[styles.title, { color: theme.text }]}>{t.companies}</Text>
+          <TouchableOpacity
+            style={[styles.sortButton, { backgroundColor: theme.surface }]}
+            onPress={() => setSortBy(sortBy === 'rating' ? 'newest' : 'rating')}
+          >
+            <Ionicons name="funnel" size={16} color={theme.primary} />
+            <Text style={[styles.sortText, { color: theme.primary }]}>
+              {sortBy === 'rating' ? t.highestRated : t.newest}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        
+        <FlatList
+          data={filteredCompanies}
+          renderItem={renderCompany}
+          keyExtractor={(item) => item.id}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.list}
+        />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  appName: {
+    ...typography.h2,
+    fontWeight: '700',
+  },
+  content: {
+    flex: 1,
+  },
+  searchContainer: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 12,
+    gap: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    ...typography.body,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  title: {
+    ...typography.h3,
+  },
+  sortButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: 8,
+  },
+  sortText: {
+    ...typography.small,
+    fontWeight: '600',
+  },
+  list: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  categoryContainer: {
+    paddingTop: spacing.md,
+  },
+  categoryScroll: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
+  },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 20,
+  },
+  categoryChipText: {
+    ...typography.bodyMedium,
+    fontSize: 14,
+  },
+});
