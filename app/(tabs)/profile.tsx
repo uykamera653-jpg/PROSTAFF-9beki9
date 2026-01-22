@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Platform, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -103,6 +103,7 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={[styles.menuItem, { backgroundColor: theme.surface }]}
             onPress={() => setShowNameModal(true)}
+            activeOpacity={0.7}
           >
             <Ionicons name="person-outline" size={24} color={theme.text} />
             <Text style={[styles.menuText, { color: theme.text }]}>{t.changeName}</Text>
@@ -112,6 +113,7 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={[styles.menuItem, { backgroundColor: theme.surface }]}
             onPress={() => setShowLangModal(true)}
+            activeOpacity={0.7}
           >
             <Ionicons name="language-outline" size={24} color={theme.text} />
             <Text style={[styles.menuText, { color: theme.text }]}>{t.changeLanguage}</Text>
@@ -124,6 +126,7 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={[styles.menuItem, { backgroundColor: theme.surface }]}
             onPress={() => setDarkMode(!darkMode)}
+            activeOpacity={0.7}
           >
             <Ionicons name="moon-outline" size={24} color={theme.text} />
             <Text style={[styles.menuText, { color: theme.text }]}>{t.darkMode}</Text>
@@ -135,6 +138,7 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={[styles.menuItem, { backgroundColor: theme.surface }]}
             onPress={handleHelpSupport}
+            activeOpacity={0.7}
           >
             <Ionicons name="call-outline" size={24} color={theme.text} />
             <Text style={[styles.menuText, { color: theme.text }]}>{t.helpSupport}</Text>
@@ -153,48 +157,55 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* Name Edit Modal */}
-      {Platform.OS === 'web' && (
-        <Modal visible={showNameModal} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>{t.changeName}</Text>
-              <Input
-                value={newName}
-                onChangeText={setNewName}
-                placeholder={t.namePlaceholder}
-              />
-              <View style={styles.modalButtons}>
-                <Button title={t.cancel} onPress={() => setShowNameModal(false)} variant="outline" />
-                <Button title={t.save} onPress={handleSaveName} />
-              </View>
+      <Modal visible={showNameModal} transparent animationType="fade" onRequestClose={() => setShowNameModal(false)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalOverlayTouch} 
+            activeOpacity={1} 
+            onPress={() => setShowNameModal(false)}
+          />
+          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{t.changeName}</Text>
+            <Input
+              value={newName}
+              onChangeText={setNewName}
+              placeholder={t.namePlaceholder}
+            />
+            <View style={styles.modalButtons}>
+              <Button title={t.cancel} onPress={() => setShowNameModal(false)} variant="outline" />
+              <Button title={t.save} onPress={handleSaveName} />
             </View>
           </View>
-        </Modal>
-      )}
+        </View>
+      </Modal>
 
       {/* Language Modal */}
-      {Platform.OS === 'web' && (
-        <Modal visible={showLangModal} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>{t.changeLanguage}</Text>
-              {(['uz', 'ru', 'en'] as Language[]).map((lang) => (
-                <TouchableOpacity
-                  key={lang}
-                  style={[styles.langOption, { borderBottomColor: theme.border }]}
-                  onPress={() => handleLanguageChange(lang)}
-                >
-                  <Text style={[styles.langText, { color: theme.text }]}>
-                    {lang === 'uz' ? 'O\'zbekcha' : lang === 'ru' ? 'Русский' : 'English'}
-                  </Text>
-                  {language === lang && <Ionicons name="checkmark" size={24} color={theme.primary} />}
-                </TouchableOpacity>
-              ))}
-              <Button title={t.cancel} onPress={() => setShowLangModal(false)} variant="outline" style={styles.modalCancelButton} />
-            </View>
+      <Modal visible={showLangModal} transparent animationType="fade" onRequestClose={() => setShowLangModal(false)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalOverlayTouch} 
+            activeOpacity={1} 
+            onPress={() => setShowLangModal(false)}
+          />
+          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{t.changeLanguage}</Text>
+            {(['uz', 'ru', 'en'] as Language[]).map((lang) => (
+              <TouchableOpacity
+                key={lang}
+                style={[styles.langOption, { borderBottomColor: theme.border }]}
+                onPress={() => handleLanguageChange(lang)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.langText, { color: theme.text }]}>
+                  {lang === 'uz' ? 'O\'zbekcha' : lang === 'ru' ? 'Русский' : 'English'}
+                </Text>
+                {language === lang && <Ionicons name="checkmark" size={24} color={theme.primary} />}
+              </TouchableOpacity>
+            ))}
+            <Button title={t.cancel} onPress={() => setShowLangModal(false)} variant="outline" style={styles.modalCancelButton} />
           </View>
-        </Modal>
-      )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -301,11 +312,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  modalOverlayTouch: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   modalContent: {
     width: '90%',
     maxWidth: 400,
     padding: spacing.xl,
     borderRadius: borderRadius.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
   },
   modalTitle: {
     ...typography.h3,
