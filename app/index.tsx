@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
-import { Redirect } from 'expo-router';
+import { View, Text, StyleSheet, Image, Alert } from 'react-native';
+import { Redirect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
@@ -14,7 +14,8 @@ export default function IndexScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { t } = useTranslation();
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, login } = useAuth();
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -69,6 +70,19 @@ export default function IndexScreen() {
     }
   };
 
+  const handleMockLogin = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      await login('test@prostaff.uz');
+      router.replace('/(tabs)/home');
+    } catch (err: any) {
+      setError(err.message || t.loginError);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background, paddingTop: insets.top }]}>
       <View style={styles.content}>
@@ -115,6 +129,25 @@ export default function IndexScreen() {
             loading={loading}
             disabled={loading}
           />
+
+          <View style={styles.divider}>
+            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+            <Text style={[styles.dividerText, { color: theme.textTertiary }]}>
+              {t.or}
+            </Text>
+            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+          </View>
+
+          <Button
+            title="🎭 Test rejimida kirish"
+            onPress={handleMockLogin}
+            variant="outline"
+            loading={loading}
+            disabled={loading}
+          />
+          <Text style={[styles.mockNote, { color: theme.textTertiary }]}>
+            Test uchun: Hech qanday sozlash talab qilinmaydi
+          </Text>
         </View>
       </View>
     </View>
@@ -162,5 +195,10 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     ...typography.small,
+  },
+  mockNote: {
+    ...typography.small,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
