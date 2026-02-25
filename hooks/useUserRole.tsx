@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './useAuth';
+import { supabase } from '../lib/supabase';
 
 export type UserRole = 'customer' | 'worker' | 'company' | 'admin';
 
@@ -9,11 +10,39 @@ export function useUserRole() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // In future, fetch from Supabase user_profiles.role
-    // For now, default to customer
-    setRole('customer');
-    setIsLoading(false);
+    if (!user) {
+      setRole('customer');
+      setIsLoading(false);
+      return;
+    }
+
+    fetchUserRole();
   }, [user]);
 
-  return { role, isLoading };
+  const fetchUserRole = async () => {
+    try {
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('email', user?.email)
+        .single();
+
+      if (error) {
+        console.log('Failed to fetch user role:', error.message);
+        setRole('customer');
+      } else if (data) {
+        setRole(data.role as UserRole);
+      } else {
+        setRole('customer');
+      }
+    } catch (error) {
+      console.error('Error fetching user role:', error);
+      setRole('customer');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return { role, isLoading, refetch: fetchUserRole };
 }

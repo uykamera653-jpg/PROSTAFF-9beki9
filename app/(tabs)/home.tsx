@@ -83,7 +83,32 @@ export default function HomeScreen() {
         </Animated.View>
 
         {/* Role-based interface */}
-        {role === 'worker' ? (
+        {role === 'admin' ? (
+          // Admin Dashboard
+          <TouchableOpacity
+            style={[styles.serviceCard, { maxWidth: cardWidth }]}
+            onPress={() => router.push('/admin-panel')}
+            activeOpacity={0.85}
+          >
+            <LinearGradient
+              colors={['#EF4444', '#DC2626']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.cardGradient, shadows.lg]}
+            >
+              <View style={styles.cardIconContainer}>
+                <Ionicons name="shield-checkmark" size={48} color="#FFFFFF" />
+              </View>
+              <View style={styles.cardContent}>
+                <Text style={styles.cardTitle}>Admin Panel</Text>
+                <Text style={styles.cardDescription}>Foydalanuvchilarni boshqarish va rollarni o'rnatish</Text>
+              </View>
+              <View style={styles.cardArrow}>
+                <Ionicons name="arrow-forward" size={28} color="rgba(255,255,255,0.8)" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : role === 'worker' ? (
           // Worker Dashboard
           <TouchableOpacity
             style={[styles.serviceCard, { maxWidth: cardWidth }]}
