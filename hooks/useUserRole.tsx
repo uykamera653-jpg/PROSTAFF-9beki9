@@ -22,16 +22,24 @@ export function useUserRole() {
   const fetchUserRole = async () => {
     try {
       setIsLoading(true);
+      
+      if (!user?.id) {
+        setRole('customer');
+        setIsLoading(false);
+        return;
+      }
+      
       const { data, error } = await supabase
         .from('user_profiles')
         .select('role')
-        .eq('email', user?.email)
+        .eq('id', user.id)
         .single();
 
       if (error) {
         console.log('Failed to fetch user role:', error.message);
         setRole('customer');
       } else if (data) {
+        console.log('User role fetched:', data.role);
         setRole(data.role as UserRole);
       } else {
         setRole('customer');
