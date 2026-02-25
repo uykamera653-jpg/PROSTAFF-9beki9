@@ -10,6 +10,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useJobs } from '../../hooks/useJobs';
 import { useCompanies } from '../../hooks/useCompanies';
 import { useWorkers } from '../../hooks/useWorkers';
+import { useUserRole } from '../../hooks/useUserRole';
 import { Card } from '../../components/ui/Card';
 import { spacing, typography, borderRadius, shadows } from '../../constants/theme';
 
@@ -22,7 +23,7 @@ export default function HomeScreen() {
   const { theme } = useTheme();
   const { t } = useTranslation();
   const { user } = useAuth();
-
+  const { role } = useUserRole();
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
@@ -81,55 +82,109 @@ export default function HomeScreen() {
           </Text>
         </Animated.View>
 
-        {/* Service Cards */}
-        <TouchableOpacity
-          style={[styles.serviceCard, { maxWidth: cardWidth }]}
-          onPress={() => router.push('/daily-workers')}
-          activeOpacity={0.85}
-        >
-          <LinearGradient
-            colors={['#3B82F6', '#2563EB']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.cardGradient, shadows.lg]}
+        {/* Role-based interface */}
+        {role === 'worker' ? (
+          // Worker Dashboard
+          <TouchableOpacity
+            style={[styles.serviceCard, { maxWidth: cardWidth }]}
+            onPress={() => router.push('/worker-dashboard')}
+            activeOpacity={0.85}
           >
-            <View style={styles.cardIconContainer}>
-              <Ionicons name="hammer" size={48} color="#FFFFFF" />
-            </View>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>{t.dailyWorkers}</Text>
-              <Text style={styles.cardDescription}>{t.dailyWorkersDesc}</Text>
-            </View>
-            <View style={styles.cardArrow}>
-              <Ionicons name="arrow-forward" size={28} color="rgba(255,255,255,0.8)" />
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
+            <LinearGradient
+              colors={['#8B5CF6', '#7C3AED']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.cardGradient, shadows.lg]}
+            >
+              <View style={styles.cardIconContainer}>
+                <Ionicons name="briefcase" size={48} color="#FFFFFF" />
+              </View>
+              <View style={styles.cardContent}>
+                <Text style={styles.cardTitle}>Ishchi paneli</Text>
+                <Text style={styles.cardDescription}>Buyurtmalarni ko'ring va qabul qiling</Text>
+              </View>
+              <View style={styles.cardArrow}>
+                <Ionicons name="arrow-forward" size={28} color="rgba(255,255,255,0.8)" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : role === 'company' ? (
+          // Company Dashboard
+          <TouchableOpacity
+            style={[styles.serviceCard, { maxWidth: cardWidth }]}
+            onPress={() => router.push('/company-dashboard')}
+            activeOpacity={0.85}
+          >
+            <LinearGradient
+              colors={['#F59E0B', '#D97706']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.cardGradient, shadows.lg]}
+            >
+              <View style={styles.cardIconContainer}>
+                <Ionicons name="business" size={48} color="#FFFFFF" />
+              </View>
+              <View style={styles.cardContent}>
+                <Text style={styles.cardTitle}>Firma paneli</Text>
+                <Text style={styles.cardDescription}>Xizmat buyurtmalarini boshqaring</Text>
+              </View>
+              <View style={styles.cardArrow}>
+                <Ionicons name="arrow-forward" size={28} color="rgba(255,255,255,0.8)" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : (
+          // Customer Interface (default)
+          <>
+            <TouchableOpacity
+              style={[styles.serviceCard, { maxWidth: cardWidth }]}
+              onPress={() => router.push('/daily-workers')}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={['#3B82F6', '#2563EB']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.cardGradient, shadows.lg]}
+              >
+                <View style={styles.cardIconContainer}>
+                  <Ionicons name="hammer" size={48} color="#FFFFFF" />
+                </View>
+                <View style={styles.cardContent}>
+                  <Text style={styles.cardTitle}>{t.dailyWorkers}</Text>
+                  <Text style={styles.cardDescription}>{t.dailyWorkersDesc}</Text>
+                </View>
+                <View style={styles.cardArrow}>
+                  <Ionicons name="arrow-forward" size={28} color="rgba(255,255,255,0.8)" />
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
 
-        {/* Service Companies Card */}
-        <TouchableOpacity
-          style={[styles.serviceCard, { maxWidth: cardWidth }]}
-          onPress={() => router.push('/(tabs)/companies')}
-          activeOpacity={0.85}
-        >
-          <LinearGradient
-            colors={['#10B981', '#059669']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.cardGradient, shadows.lg]}
-          >
-            <View style={styles.cardIconContainer}>
-              <Ionicons name="business" size={48} color="#FFFFFF" />
-            </View>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>{t.serviceCompanies}</Text>
-              <Text style={styles.cardDescription}>{t.serviceCompaniesDesc}</Text>
-            </View>
-            <View style={styles.cardArrow}>
-              <Ionicons name="arrow-forward" size={28} color="rgba(255,255,255,0.8)" />
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.serviceCard, { maxWidth: cardWidth }]}
+              onPress={() => router.push('/(tabs)/companies')}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={['#10B981', '#059669']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[styles.cardGradient, shadows.lg]}
+              >
+                <View style={styles.cardIconContainer}>
+                  <Ionicons name="business" size={48} color="#FFFFFF" />
+                </View>
+                <View style={styles.cardContent}>
+                  <Text style={styles.cardTitle}>{t.serviceCompanies}</Text>
+                  <Text style={styles.cardDescription}>{t.serviceCompaniesDesc}</Text>
+                </View>
+                <View style={styles.cardArrow}>
+                  <Ionicons name="arrow-forward" size={28} color="rgba(255,255,255,0.8)" />
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </>
+        )}
       </ScrollView>
     </View>
   );
