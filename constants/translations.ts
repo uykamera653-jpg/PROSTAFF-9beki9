@@ -6,6 +6,14 @@ export const translations = {
     // Auth
     login: 'Kirish',
     loginWithGoogle: 'Google orqali kirish',
+    signInWithGoogle: 'Google orqali kirish',
+    signInWithEmail: 'Email orqali kirish',
+    welcomeBack: 'Xush kelibsiz!',
+    emailPlaceholder: 'Email manzilingiz',
+    emailRequired: 'Email manzilini kiriting',
+    checkEmail: 'Emailingizni tekshiring - Kirish havolasi yuborildi',
+    loginError: 'Xatolik yuz berdi',
+    or: 'yoki',
     mockLoginNote: 'Demo rejim: Har qanday Google akkaunt bilan kirish mumkin',
     // Tabs
     dailyWorkers: 'Kunlik ishchilar',
@@ -175,6 +183,14 @@ export const translations = {
     // Auth
     login: 'Войти',
     loginWithGoogle: 'Войти через Google',
+    signInWithGoogle: 'Войти через Google',
+    signInWithEmail: 'Войти через Email',
+    welcomeBack: 'Добро пожаловать!',
+    emailPlaceholder: 'Ваш email',
+    emailRequired: 'Введите email',
+    checkEmail: 'Проверьте email - Ссылка для входа отправлена',
+    loginError: 'Произошла ошибка',
+    or: 'или',
     mockLoginNote: 'Демо режим: Можно войти с любым Google аккаунтом',
     // Tabs
     dailyWorkers: 'Дневные работники',
@@ -344,6 +360,14 @@ export const translations = {
     // Auth
     login: 'Login',
     loginWithGoogle: 'Login with Google',
+    signInWithGoogle: 'Sign in with Google',
+    signInWithEmail: 'Sign in with Email',
+    welcomeBack: 'Welcome back!',
+    emailPlaceholder: 'Your email',
+    emailRequired: 'Enter your email',
+    checkEmail: 'Check your email - Login link sent',
+    loginError: 'An error occurred',
+    or: 'or',
     mockLoginNote: 'Demo mode: Can login with any Google account',
     // Tabs
     dailyWorkers: 'Daily Workers',
