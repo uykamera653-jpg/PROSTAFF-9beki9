@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Redirect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../hooks/useAuth';
@@ -14,9 +14,11 @@ export default function IndexScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { t } = useTranslation();
-  const { user, isLoading, login } = useAuth();
+  const { user, isLoading } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -43,9 +45,13 @@ export default function IndexScreen() {
     }
   };
 
-  const handleEmailSignIn = async () => {
+  const handleEmailAuth = async () => {
     if (!email.trim()) {
       setError(t.emailRequired);
+      return;
+    }
+    if (!password.trim() || password.length < 6) {
+      setError('Parol kamida 6 ta belgidan iborat bo\'lishi kerak');
       return;
     }
 
@@ -53,29 +59,37 @@ export default function IndexScreen() {
       setLoading(true);
       setError('');
       
-      const { data, error } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-      });
+      if (isSignUp) {
+        // Registration
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password: password,
+          options: {
+            data: {
+              name: email.split('@')[0],
+            },
+          },
+        });
 
-      if (error) {
-        setError(error.message);
+        if (error) {
+          setError(error.message);
+        } else if (data.user) {
+          alert('Ro\'yxatdan o\'tdingiz! Endi tizimga kirishingiz mumkin.');
+          setIsSignUp(false);
+        }
       } else {
-        setError('');
-        alert(t.checkEmail);
-      }
-    } catch (err: any) {
-      setError(err.message || t.loginError);
-    } finally {
-      setLoading(false);
-    }
-  };
+        // Login
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password: password,
+        });
 
-  const handleMockLogin = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      await login('test@prostaff.uz');
-      router.replace('/(tabs)/home');
+        if (error) {
+          setError(error.message);
+        } else if (data.user) {
+          router.replace('/(tabs)/home');
+        }
+      }
     } catch (err: any) {
       setError(err.message || t.loginError);
     } finally {
@@ -103,16 +117,37 @@ export default function IndexScreen() {
             editable={!loading}
           />
 
+          <Input
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Parol (kamida 6 ta belgi)"
+            secureTextEntry
+            autoCapitalize="none"
+            editable={!loading}
+          />
+
           {error ? (
             <Text style={[styles.error, { color: theme.error }]}>{error}</Text>
           ) : null}
 
           <Button
-            title={t.signInWithEmail}
-            onPress={handleEmailSignIn}
+            title={isSignUp ? "Ro'yxatdan o'tish" : "Kirish"}
+            onPress={handleEmailAuth}
             loading={loading}
             disabled={loading}
           />
+
+          <TouchableOpacity
+            onPress={() => {
+              setIsSignUp(!isSignUp);
+              setError('');
+            }}
+            disabled={loading}
+          >
+            <Text style={[styles.switchText, { color: theme.primary }]}>
+              {isSignUp ? "Akkauntingiz bormi? Kirish" : "Akkauntingiz yo'qmi? Ro'yxatdan o'tish"}
+            </Text>
+          </TouchableOpacity>
 
           <View style={styles.divider}>
             <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
@@ -129,24 +164,8 @@ export default function IndexScreen() {
             loading={loading}
             disabled={loading}
           />
-
-          <View style={styles.divider}>
-            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
-            <Text style={[styles.dividerText, { color: theme.textTertiary }]}>
-              {t.or}
-            </Text>
-            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
-          </View>
-
-          <Button
-            title="🎭 Test rejimida kirish"
-            onPress={handleMockLogin}
-            variant="outline"
-            loading={loading}
-            disabled={loading}
-          />
-          <Text style={[styles.mockNote, { color: theme.textTertiary }]}>
-            Test uchun: Hech qanday sozlash talab qilinmaydi
+          <Text style={[styles.note, { color: theme.textTertiary }]}>
+            * Google Sign-In uchun Supabase da Google provider yoqilgan bo'lishi kerak
           </Text>
         </View>
       </View>
@@ -196,9 +215,15 @@ const styles = StyleSheet.create({
   dividerText: {
     ...typography.small,
   },
-  mockNote: {
+  note: {
     ...typography.small,
     textAlign: 'center',
     fontStyle: 'italic',
+    marginTop: -spacing.sm,
+  },
+  switchText: {
+    ...typography.body,
+    textAlign: 'center',
+    textDecorationLine: 'underline',
   },
 });

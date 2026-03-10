@@ -9,6 +9,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useSettings } from '../../hooks/useSettings';
 import { useJobs } from '../../hooks/useJobs';
 import { useCompanies } from '../../hooks/useCompanies';
+import { useUserRole } from '../../hooks/useUserRole';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -24,6 +25,7 @@ export default function ProfileScreen() {
   const { darkMode, setDarkMode, setLanguage } = useSettings();
   const { getUserJobs } = useJobs();
   const { getUserOrders } = useCompanies();
+  const { role } = useUserRole();
 
   const myJobs = user ? getUserJobs(user.id) : [];
   const myOrders = user ? getUserOrders(user.id) : [];
@@ -100,6 +102,18 @@ export default function ProfileScreen() {
         </Card>
 
         <View style={styles.section}>
+          {role === 'admin' && (
+            <TouchableOpacity
+              style={[styles.menuItem, { backgroundColor: theme.surface, borderLeftWidth: 3, borderLeftColor: theme.error }]}
+              onPress={() => router.push('/admin-panel')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="shield-checkmark" size={24} color={theme.error} />
+              <Text style={[styles.menuText, { color: theme.text, fontWeight: '600' }]}>{t.adminPanel}</Text>
+              <Ionicons name="chevron-forward" size={24} color={theme.textTertiary} />
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={[styles.menuItem, { backgroundColor: theme.surface }]}
             onPress={() => setShowNameModal(true)}
