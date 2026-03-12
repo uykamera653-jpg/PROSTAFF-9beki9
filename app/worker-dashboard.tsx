@@ -69,7 +69,8 @@ export default function WorkerDashboardScreen() {
   useEffect(() => {
     if (workerProfile) {
       loadOrders();
-      setupRealtimeSubscription();
+      const cleanup = setupRealtimeSubscription();
+      return cleanup;
     }
   }, [workerProfile, selectedTab]);
 
@@ -105,6 +106,11 @@ export default function WorkerDashboardScreen() {
   };
 
   const loadOrders = async () => {
+    if (!user) {
+      console.log('⚠️ No user, skipping load');
+      return;
+    }
+
     try {
       setRefreshing(true);
       console.log('🔄 Loading orders for tab:', selectedTab);
@@ -113,7 +119,7 @@ export default function WorkerDashboardScreen() {
       const { data: workerCats, error: catsError } = await supabase
         .from('worker_categories')
         .select('category_id')
-        .eq('worker_id', user!.id);
+        .eq('worker_id', user.id);
 
       if (catsError) {
         console.error('❌ Categories error:', catsError);
@@ -139,7 +145,7 @@ export default function WorkerDashboardScreen() {
       if (selectedTab === 'pending') {
         query = query.eq('status', 'pending');
       } else {
-        query = query.eq('worker_id', user!.id).eq('status', selectedTab);
+        query = query.eq('worker_id', user.id).eq('status', selectedTab);
       }
 
       const { data, error } = await query.order('created_at', { ascending: false });
@@ -152,16 +158,25 @@ export default function WorkerDashboardScreen() {
       console.log('✅ Loaded orders:', data?.length || 0);
       setOrders(data || []);
     } catch (error: any) {
-      console.error('Failed to load orders:', error);
-      Alert.alert('Xatolik', 'Buyurtmalarni yuklashda xatolik');
+      console.error('❌ Failed to load orders:', error);
+      // Don't show alert on web to avoid disrupting UX
+      if (error?.message) {
+        console.error('Error details:', error.message);
+      }
     } finally {
       setRefreshing(false);
     }
   };
 
   const setupRealtimeSubscription = () => {
+    if (!user) {
+      console.log('⚠️ No user, skipping subscription');
+      return () => {};
+    }
+
+    console.log('📡 Setting up real-time subscription');
     const channel = supabase
-      .channel('worker-orders')
+      .channel('worker-orders-' + user.id)
       .on(
         'postgres_changes',
         {
@@ -169,39 +184,47 @@ export default function WorkerDashboardScreen() {
           schema: 'public',
           table: 'orders',
         },
-        () => {
+        (payload) => {
+          console.log('📨 Real-time update:', payload);
           loadOrders();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('📡 Subscription status:', status);
+      });
 
     return () => {
+      console.log('🔌 Cleaning up subscription');
       supabase.removeChannel(channel);
     };
   };
 
   const toggleOnlineStatus = async (value: boolean) => {
+    if (!user) return;
+
     try {
       const { error } = await supabase
         .from('workers')
         .update({ is_online: value })
-        .eq('id', user!.id);
+        .eq('id', user.id);
 
       if (error) throw error;
       setIsOnline(value);
     } catch (error: any) {
-      console.error('Failed to update online status:', error);
+      console.error('❌ Failed to update online status:', error);
       Alert.alert('Xatolik', 'Status yangilanmadi');
     }
   };
 
   const handleAcceptOrder = async (orderId: string) => {
+    if (!user) return;
+
     try {
       const { error } = await supabase
         .from('orders')
         .update({
           status: 'accepted',
-          worker_id: user!.id,
+          worker_id: user.id,
         })
         .eq('id', orderId);
 
@@ -210,7 +233,7 @@ export default function WorkerDashboardScreen() {
       Alert.alert('Muvaffaqiyatli!', 'Buyurtma qabul qilindi');
       loadOrders();
     } catch (error: any) {
-      console.error('Failed to accept order:', error);
+      console.error('❌ Failed to accept order:', error);
       Alert.alert('Xatolik', 'Buyurtmani qabul qilishda xatolik');
     }
   };
