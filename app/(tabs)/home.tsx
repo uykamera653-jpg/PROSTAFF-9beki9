@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,10 +23,21 @@ export default function HomeScreen() {
   const { theme } = useTheme();
   const { t } = useTranslation();
   const { user } = useAuth();
-  const { role } = useUserRole();
+  const { role, isLoading: roleLoading } = useUserRole();
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
+
+  // Auto-redirect based on role
+  useEffect(() => {
+    if (!roleLoading && user) {
+      if (role === 'worker') {
+        router.replace('/worker-dashboard');
+      } else if (role === 'company') {
+        router.replace('/company-dashboard');
+      }
+    }
+  }, [role, roleLoading, user]);
 
 
 
@@ -45,6 +56,19 @@ export default function HomeScreen() {
       }),
     ]).start();
   }, []);
+
+  // Show loading while checking role
+  if (roleLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <View style={styles.loadingContainer}>
+          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+            {t.loading || 'Yuklanmoqda...'}
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -292,5 +316,12 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
   },
-
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    ...typography.body,
+  },
 });
