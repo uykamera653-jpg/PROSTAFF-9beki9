@@ -25,7 +25,7 @@ export default function ProfileScreen() {
   const { darkMode, setDarkMode, setLanguage } = useSettings();
   const { getUserJobs } = useJobs();
   const { getUserOrders } = useCompanies();
-  const { role } = useUserRole();
+  const { role, refetch: refetchRole } = useUserRole();
 
   const myJobs = user ? getUserJobs(user.id) : [];
   const myOrders = user ? getUserOrders(user.id) : [];
@@ -39,7 +39,10 @@ export default function ProfileScreen() {
   // Auto-refresh role when screen is focused
   useEffect(() => {
     console.log('Profile: Current role =', role, 'User ID =', user?.id);
-  }, [role, user]);
+    if (user) {
+      refetchRole(); // Refresh role when profile opens
+    }
+  }, [user]);
 
   const handleSaveName = async () => {
     if (newName.trim()) {
@@ -87,9 +90,12 @@ export default function ProfileScreen() {
         <Card>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
             <Text style={[styles.statsTitle, { color: theme.text }]}>{t.stats}</Text>
-            {__DEV__ && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
               <Text style={[styles.debugText, { color: theme.textTertiary }]}>Role: {role}</Text>
-            )}
+              <TouchableOpacity onPress={refetchRole} style={{ padding: 4 }}>
+                <Ionicons name="refresh" size={16} color={theme.primary} />
+              </TouchableOpacity>
+            </View>
           </View>
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
