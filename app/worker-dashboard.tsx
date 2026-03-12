@@ -107,6 +107,7 @@ export default function WorkerDashboardScreen() {
   const loadOrders = async () => {
     try {
       setRefreshing(true);
+      console.log('🔄 Loading orders for tab:', selectedTab);
 
       // Get worker categories
       const { data: workerCats, error: catsError } = await supabase
@@ -114,12 +115,18 @@ export default function WorkerDashboardScreen() {
         .select('category_id')
         .eq('worker_id', user!.id);
 
-      if (catsError) throw catsError;
+      if (catsError) {
+        console.error('❌ Categories error:', catsError);
+        throw catsError;
+      }
 
       const categoryIds = workerCats?.map(c => c.category_id) || [];
+      console.log('📋 Worker categories:', categoryIds.length);
 
       if (categoryIds.length === 0) {
+        console.log('⚠️ No categories selected');
         setOrders([]);
+        setRefreshing(false);
         return;
       }
 
@@ -137,7 +144,12 @@ export default function WorkerDashboardScreen() {
 
       const { data, error } = await query.order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Orders query error:', error);
+        throw error;
+      }
+      
+      console.log('✅ Loaded orders:', data?.length || 0);
       setOrders(data || []);
     } catch (error: any) {
       console.error('Failed to load orders:', error);
@@ -431,29 +443,38 @@ export default function WorkerDashboardScreen() {
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={orders}
-        renderItem={renderOrder}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.ordersList}
-        showsVerticalScrollIndicator={false}
-        onRefresh={loadOrders}
-        refreshing={refreshing}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="briefcase-outline" size={64} color={theme.textTertiary} />
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-              {selectedTab === 'pending'
-                ? isOnline
-                  ? 'Yangi buyurtmalar yo\'q'
-                  : 'Onlayn bo\'ling va buyurtmalarni qabul qiling'
-                : selectedTab === 'accepted'
-                ? 'Aktiv buyurtmalar yo\'q'
-                : 'Bajarilgan buyurtmalar yo\'q'}
-            </Text>
-          </View>
-        }
-      />
+      {refreshing && orders.length === 0 ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+            Yuklanmoqda...
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={orders}
+          renderItem={renderOrder}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.ordersList}
+          showsVerticalScrollIndicator={false}
+          onRefresh={loadOrders}
+          refreshing={refreshing}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="briefcase-outline" size={64} color={theme.textTertiary} />
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                {selectedTab === 'pending'
+                  ? isOnline
+                    ? 'Yangi buyurtmalar yo\'q'
+                    : 'Onlayn bo\'ling va buyurtmalarni qabul qiling'
+                  : selectedTab === 'accepted'
+                  ? 'Aktiv buyurtmalar yo\'q'
+                  : 'Bajarilgan buyurtmalar yo\'q'}
+              </Text>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 }
