@@ -381,15 +381,18 @@ export default function WorkerDashboardScreen() {
         <TouchableOpacity
           style={[
             styles.tab,
-            selectedTab === 'pending' && { backgroundColor: theme.primary },
+            {
+              backgroundColor: selectedTab === 'pending' ? theme.primary : theme.surface,
+              borderColor: selectedTab === 'pending' ? theme.primary : theme.border,
+            },
           ]}
           onPress={() => setSelectedTab('pending')}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
           <Text
             style={[
               styles.tabText,
-              { color: selectedTab === 'pending' ? '#FFFFFF' : theme.textSecondary },
+              { color: selectedTab === 'pending' ? '#FFFFFF' : theme.text },
             ]}
           >
             Mavjud
@@ -398,15 +401,18 @@ export default function WorkerDashboardScreen() {
         <TouchableOpacity
           style={[
             styles.tab,
-            selectedTab === 'accepted' && { backgroundColor: theme.primary },
+            {
+              backgroundColor: selectedTab === 'accepted' ? theme.primary : theme.surface,
+              borderColor: selectedTab === 'accepted' ? theme.primary : theme.border,
+            },
           ]}
           onPress={() => setSelectedTab('accepted')}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
           <Text
             style={[
               styles.tabText,
-              { color: selectedTab === 'accepted' ? '#FFFFFF' : theme.textSecondary },
+              { color: selectedTab === 'accepted' ? '#FFFFFF' : theme.text },
             ]}
           >
             Aktiv
@@ -415,15 +421,18 @@ export default function WorkerDashboardScreen() {
         <TouchableOpacity
           style={[
             styles.tab,
-            selectedTab === 'completed' && { backgroundColor: theme.primary },
+            {
+              backgroundColor: selectedTab === 'completed' ? theme.primary : theme.surface,
+              borderColor: selectedTab === 'completed' ? theme.primary : theme.border,
+            },
           ]}
           onPress={() => setSelectedTab('completed')}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
           <Text
             style={[
               styles.tabText,
-              { color: selectedTab === 'completed' ? '#FFFFFF' : theme.textSecondary },
+              { color: selectedTab === 'completed' ? '#FFFFFF' : theme.text },
             ]}
           >
             Bajarilgan
@@ -548,6 +557,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.md,
     alignItems: 'center',
+    borderWidth: 1.5,
   },
   tabText: {
     ...typography.bodyMedium,
