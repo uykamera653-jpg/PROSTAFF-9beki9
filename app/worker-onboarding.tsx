@@ -91,21 +91,51 @@ export default function WorkerOnboardingScreen() {
     try {
       setLoading(true);
 
-      // 1. Create worker profile
-      const { error: workerError } = await supabase
+      // 1. Check if worker profile exists
+      const { data: existingWorker } = await supabase
         .from('workers')
-        .insert({
-          id: user.id,
-          full_name: fullName.trim(),
-          phone: phone.trim(),
-          min_price: parseFloat(minPrice) || 200000,
-          max_price: parseFloat(maxPrice) || 300000,
-          is_online: true,
-        });
+        .select('id')
+        .eq('id', user.id)
+        .single();
 
-      if (workerError) throw workerError;
+      // 2. Create or update worker profile
+      if (existingWorker) {
+        // Update existing profile
+        const { error: workerError } = await supabase
+          .from('workers')
+          .update({
+            full_name: fullName.trim(),
+            phone: phone.trim(),
+            min_price: parseFloat(minPrice) || 200000,
+            max_price: parseFloat(maxPrice) || 300000,
+            is_online: true,
+          })
+          .eq('id', user.id);
 
-      // 2. Add worker categories
+        if (workerError) throw workerError;
+      } else {
+        // Create new profile
+        const { error: workerError } = await supabase
+          .from('workers')
+          .insert({
+            id: user.id,
+            full_name: fullName.trim(),
+            phone: phone.trim(),
+            min_price: parseFloat(minPrice) || 200000,
+            max_price: parseFloat(maxPrice) || 300000,
+            is_online: true,
+          });
+
+        if (workerError) throw workerError;
+      }
+
+      // 3. Delete old categories
+      await supabase
+        .from('worker_categories')
+        .delete()
+        .eq('worker_id', user.id);
+
+      // 4. Add new worker categories
       const categoryInserts = selectedCategories.map(categoryId => ({
         worker_id: user.id,
         category_id: categoryId,
@@ -119,12 +149,12 @@ export default function WorkerOnboardingScreen() {
 
       Alert.alert(
         'Muvaffaqiyatli!',
-        'Ishchi profili yaratildi. Endi buyurtmalarni qabul qilishingiz mumkin.',
+        'Ishchi profili saqlandi. Endi buyurtmalarni qabul qilishingiz mumkin.',
         [{ text: 'OK', onPress: () => router.replace('/worker-dashboard') }]
       );
     } catch (error: any) {
       console.error('Failed to complete onboarding:', error);
-      Alert.alert('Xatolik', error.message || 'Profilni yaratishda xatolik yuz berdi');
+      Alert.alert('Xatolik', error.message || 'Profilni saqlashda xatolik yuz berdi');
     } finally {
       setLoading(false);
     }
