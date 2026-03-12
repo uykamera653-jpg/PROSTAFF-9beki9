@@ -381,10 +381,7 @@ export default function WorkerDashboardScreen() {
         <TouchableOpacity
           style={[
             styles.tab,
-            {
-              backgroundColor: selectedTab === 'pending' ? theme.primary : theme.surface,
-              borderColor: selectedTab === 'pending' ? theme.primary : theme.border,
-            },
+            selectedTab === 'pending' && { backgroundColor: theme.primary, borderColor: theme.primary },
           ]}
           onPress={() => setSelectedTab('pending')}
           activeOpacity={0.8}
@@ -392,7 +389,7 @@ export default function WorkerDashboardScreen() {
           <Text
             style={[
               styles.tabText,
-              { color: selectedTab === 'pending' ? '#FFFFFF' : theme.text },
+              { color: selectedTab === 'pending' ? '#FFFFFF' : theme.primary },
             ]}
           >
             Mavjud
@@ -401,10 +398,7 @@ export default function WorkerDashboardScreen() {
         <TouchableOpacity
           style={[
             styles.tab,
-            {
-              backgroundColor: selectedTab === 'accepted' ? theme.primary : theme.surface,
-              borderColor: selectedTab === 'accepted' ? theme.primary : theme.border,
-            },
+            selectedTab === 'accepted' && { backgroundColor: theme.primary, borderColor: theme.primary },
           ]}
           onPress={() => setSelectedTab('accepted')}
           activeOpacity={0.8}
@@ -412,7 +406,7 @@ export default function WorkerDashboardScreen() {
           <Text
             style={[
               styles.tabText,
-              { color: selectedTab === 'accepted' ? '#FFFFFF' : theme.text },
+              { color: selectedTab === 'accepted' ? '#FFFFFF' : theme.primary },
             ]}
           >
             Aktiv
@@ -421,10 +415,7 @@ export default function WorkerDashboardScreen() {
         <TouchableOpacity
           style={[
             styles.tab,
-            {
-              backgroundColor: selectedTab === 'completed' ? theme.primary : theme.surface,
-              borderColor: selectedTab === 'completed' ? theme.primary : theme.border,
-            },
+            selectedTab === 'completed' && { backgroundColor: theme.primary, borderColor: theme.primary },
           ]}
           onPress={() => setSelectedTab('completed')}
           activeOpacity={0.8}
@@ -432,7 +423,7 @@ export default function WorkerDashboardScreen() {
           <Text
             style={[
               styles.tabText,
-              { color: selectedTab === 'completed' ? '#FFFFFF' : theme.text },
+              { color: selectedTab === 'completed' ? '#FFFFFF' : theme.primary },
             ]}
           >
             Bajarilgan
@@ -558,6 +549,8 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     alignItems: 'center',
     borderWidth: 1.5,
+    backgroundColor: 'transparent',
+    borderColor: '#E5E7EB',
   },
   tabText: {
     ...typography.bodyMedium,
