@@ -46,6 +46,47 @@ export default function IndexScreen() {
     }
   };
 
+  const handleDemoLogin = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      const demoEmail = 'demo@prostaff.uz';
+      const demoPassword = 'demo123456';
+      
+      // Try to sign in first
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email: demoEmail,
+        password: demoPassword,
+      });
+
+      if (signInError) {
+        // If sign in failed, create demo account
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: demoEmail,
+          password: demoPassword,
+          options: {
+            data: {
+              name: 'Demo Foydalanuvchi',
+            },
+          },
+        });
+
+        if (signUpError) {
+          setError(signUpError.message);
+        } else if (signUpData.user) {
+          router.replace('/(tabs)/home');
+        }
+      } else if (signInData.user) {
+        router.replace('/(tabs)/home');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Demo kirish xatoligi');
+    } finally {
+      setLoading(false);
+    }
+  };
+
 
 
   const handleEmailAuth = async () => {
@@ -162,6 +203,14 @@ export default function IndexScreen() {
           </View>
 
           <Button
+            title="🎭 Demo profil bilan kirish"
+            onPress={handleDemoLogin}
+            variant="outline"
+            loading={loading}
+            disabled={loading}
+          />
+
+          <Button
             title={t.signInWithGoogle}
             onPress={handleGoogleSignIn}
             variant="outline"
@@ -169,7 +218,7 @@ export default function IndexScreen() {
             disabled={loading}
           />
           <Text style={[styles.note, { color: theme.textTertiary }]}>
-            * Google Sign-In uchun Supabase da Google provider yoqilgan bo'lishi kerak
+            * Demo: demo@prostaff.uz / demo123456
           </Text>
         </View>
       </View>
