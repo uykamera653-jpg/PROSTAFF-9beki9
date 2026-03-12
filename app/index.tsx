@@ -54,30 +54,22 @@ export default function IndexScreen() {
       const demoEmail = 'demo@prostaff.uz';
       const demoPassword = 'demo123456';
       
-      // Try to sign in first
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      // Direct sign in - no signup fallback to avoid email rate limits
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: demoEmail,
         password: demoPassword,
       });
 
-      if (signInError) {
-        // If sign in failed, create demo account
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email: demoEmail,
-          password: demoPassword,
-          options: {
-            data: {
-              name: 'Demo Foydalanuvchi',
-            },
-          },
-        });
-
-        if (signUpError) {
-          setError(signUpError.message);
-        } else if (signUpData.user) {
-          router.replace('/(tabs)/home');
+      if (error) {
+        // Show clear error message
+        if (error.message.includes('rate limit')) {
+          setError('Email rate limit - bir necha daqiqa kuting yoki boshqa akkaunt bilan kiring');
+        } else {
+          setError('Demo kirish xatoligi: ' + error.message);
         }
-      } else if (signInData.user) {
+        console.error('Demo login error:', error);
+      } else if (data.user) {
+        // Successful login
         router.replace('/(tabs)/home');
       }
     } catch (err: any) {
