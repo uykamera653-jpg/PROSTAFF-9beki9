@@ -57,8 +57,15 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = async () => {
-    await logout();
-    router.replace('/');
+    try {
+      await logout();
+      // Force navigation to login page
+      router.replace('/');
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Still navigate even on error
+      router.replace('/');
+    }
   };
 
   const handleHelpSupport = () => {

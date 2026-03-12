@@ -127,6 +127,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
+      console.log('Logging out...');
+      
+      // Immediately clear user state to prevent redirect
+      setUser(null);
+      
       // Logout from Supabase if logged in
       const { error } = await supabase.auth.signOut();
       if (error) {
@@ -135,9 +140,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Clear local storage
       await AsyncStorage.removeItem('user');
-      setUser(null);
+      
+      console.log('Logout complete');
     } catch (error) {
       console.error('Failed to logout:', error);
+      setUser(null); // Still clear user even on error
       throw error;
     }
   };
