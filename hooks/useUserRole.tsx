@@ -11,11 +11,13 @@ export function useUserRole() {
 
   useEffect(() => {
     if (!user) {
+      console.log('useUserRole: No user, setting role to customer');
       setRole('customer');
       setIsLoading(false);
       return;
     }
 
+    console.log('useUserRole: User changed, fetching role for:', user.id);
     fetchUserRole();
   }, [user]);
 
@@ -36,12 +38,13 @@ export function useUserRole() {
         .single();
 
       if (error) {
-        console.log('Failed to fetch user role:', error.message);
+        console.error('❌ Failed to fetch user role:', error.message);
         setRole('customer');
       } else if (data) {
-        console.log('User role fetched:', data.role);
+        console.log('✅ User role fetched successfully:', data.role);
         setRole(data.role as UserRole);
       } else {
+        console.log('⚠️ No role data found, defaulting to customer');
         setRole('customer');
       }
     } catch (error) {

@@ -36,6 +36,11 @@ export default function ProfileScreen() {
   const [showLangModal, setShowLangModal] = useState(false);
   const [newName, setNewName] = useState(user?.name || '');
 
+  // Auto-refresh role when screen is focused
+  useEffect(() => {
+    console.log('Profile: Current role =', role, 'User ID =', user?.id);
+  }, [role, user]);
+
   const handleSaveName = async () => {
     if (newName.trim()) {
       await updateProfile(newName.trim());
@@ -80,7 +85,12 @@ export default function ProfileScreen() {
         </Card>
 
         <Card>
-          <Text style={[styles.statsTitle, { color: theme.text }]}>{t.stats}</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
+            <Text style={[styles.statsTitle, { color: theme.text }]}>{t.stats}</Text>
+            {__DEV__ && (
+              <Text style={[styles.debugText, { color: theme.textTertiary }]}>Role: {role}</Text>
+            )}
+          </View>
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
               <Text style={[styles.statValue, { color: theme.primary }]}>{myJobs.length}</Text>
@@ -364,5 +374,9 @@ const styles = StyleSheet.create({
   },
   modalCancelButton: {
     marginTop: spacing.lg,
+  },
+  debugText: {
+    ...typography.small,
+    fontStyle: 'italic',
   },
 });
