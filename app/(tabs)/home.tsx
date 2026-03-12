@@ -30,11 +30,16 @@ export default function HomeScreen() {
 
   // Auto-redirect based on role
   useEffect(() => {
+    console.log('🔍 Role check:', { role, roleLoading, hasUser: !!user });
     if (!roleLoading && user) {
       if (role === 'worker') {
+        console.log('✅ Redirecting to worker dashboard');
         router.replace('/worker-dashboard');
       } else if (role === 'company') {
+        console.log('✅ Redirecting to company dashboard');
         router.replace('/company-dashboard');
+      } else {
+        console.log('ℹ️ Staying on home (role: ' + role + ')');
       }
     }
   }, [role, roleLoading, user]);
