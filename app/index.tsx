@@ -74,8 +74,18 @@ export default function IndexScreen() {
         if (error) {
           setError(error.message);
         } else if (data.user) {
-          alert('Ro\'yxatdan o\'tdingiz! Endi tizimga kirishingiz mumkin.');
-          setIsSignUp(false);
+          // Check if email confirmation is required
+          if (data.session) {
+            // User is automatically logged in
+            alert('Ro\'yxatdan o\'tdingiz!');
+            router.replace('/(tabs)/home');
+          } else {
+            // Email confirmation required
+            alert('Ro\'yxatdan o\'tdingiz! Email manzilingizga yuborilgan tasdiqlash havolasini bosing va keyin tizimga kiring.');
+            setIsSignUp(false);
+            setEmail('');
+            setPassword('');
+          }
         }
       } else {
         // Login
