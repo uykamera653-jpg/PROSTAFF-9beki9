@@ -357,7 +357,7 @@ export default function WorkerDashboardScreen() {
         <Text style={[styles.headerTitle, { color: theme.text }]}>
           {t.workerDashboard || 'Ishchi paneli'}
         </Text>
-        <TouchableOpacity onPress={() => router.push('/(tabs)/profile')}>
+        <TouchableOpacity onPress={() => router.push('/worker-profile')}>
           <Ionicons name="person-circle" size={28} color={theme.primary} />
         </TouchableOpacity>
       </View>
