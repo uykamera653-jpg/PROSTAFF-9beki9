@@ -118,7 +118,7 @@ export default function ProfileScreen() {
         </Card>
 
         <View style={styles.section}>
-          {role === 'admin' && (
+          {(role === 'admin' || role === 'moderator') && (
             <TouchableOpacity
               style={[styles.menuItem, { backgroundColor: theme.surface, borderLeftWidth: 3, borderLeftColor: theme.error }]}
               onPress={() => router.push('/admin-panel')}

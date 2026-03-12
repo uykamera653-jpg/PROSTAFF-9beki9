@@ -83,7 +83,7 @@ export default function HomeScreen() {
         </Animated.View>
 
         {/* Role-based interface */}
-        {role === 'admin' ? (
+        {(role === 'admin' || role === 'moderator') ? (
           // Admin Dashboard
           <TouchableOpacity
             style={[styles.serviceCard, { maxWidth: cardWidth }]}

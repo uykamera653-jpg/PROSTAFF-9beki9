@@ -42,14 +42,14 @@ export default function AdminPanelScreen() {
   const [showRoleModal, setShowRoleModal] = useState(false);
 
   useEffect(() => {
-    // Check if user is admin
-    if (!roleLoading && currentUserRole !== 'admin') {
+    // Check if user is admin or moderator
+    if (!roleLoading && currentUserRole !== 'admin' && currentUserRole !== 'moderator') {
       Alert.alert('Access Denied', 'Only administrators can access this page.');
       router.back();
       return;
     }
 
-    if (currentUserRole === 'admin') {
+    if (currentUserRole === 'admin' || currentUserRole === 'moderator') {
       fetchUsers();
     }
   }, [currentUserRole, roleLoading]);
@@ -162,7 +162,7 @@ export default function AdminPanelScreen() {
     </Card>
   );
 
-  if (roleLoading || (currentUserRole !== 'admin' && !roleLoading)) {
+  if (roleLoading || (currentUserRole !== 'admin' && currentUserRole !== 'moderator' && !roleLoading)) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={[styles.header, { paddingTop: insets.top + spacing.md, backgroundColor: theme.surface }]}>
