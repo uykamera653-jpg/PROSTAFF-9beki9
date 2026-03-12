@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   FlatList,
   Switch,
+  Platform,
   Alert,
   ActivityIndicator,
 } from 'react-native';
@@ -18,6 +19,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../hooks/useAuth';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { useAlert } from '../components/ui/WebAlert';
 import { spacing, typography, borderRadius } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 
@@ -57,6 +59,7 @@ export default function WorkerDashboardScreen() {
   const [isOnline, setIsOnline] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const { showAlert, AlertComponent } = useAlert();
 
   useEffect(() => {
     if (!user) {
@@ -88,7 +91,8 @@ export default function WorkerDashboardScreen() {
           // Worker profile doesn't exist, redirect to onboarding
           router.replace('/worker-onboarding');
         } else {
-          throw error;
+          console.error('Worker profile error:', error);
+          showAlert('Xatolik', 'Profil yuklanmadi');
         }
         return;
       }
@@ -99,7 +103,7 @@ export default function WorkerDashboardScreen() {
       }
     } catch (error: any) {
       console.error('Failed to check worker profile:', error);
-      Alert.alert('Xatolik', 'Profil yuklanmadi');
+      showAlert('Xatolik', 'Profil yuklanmadi');
     } finally {
       setLoading(false);
     }
@@ -212,7 +216,7 @@ export default function WorkerDashboardScreen() {
       setIsOnline(value);
     } catch (error: any) {
       console.error('❌ Failed to update online status:', error);
-      Alert.alert('Xatolik', 'Status yangilanmadi');
+      showAlert('Xatolik', 'Status yangilanmadi');
     }
   };
 
@@ -230,52 +234,51 @@ export default function WorkerDashboardScreen() {
 
       if (error) throw error;
 
-      Alert.alert('Muvaffaqiyatli!', 'Buyurtma qabul qilindi');
+      showAlert('Muvaffaqiyatli!', 'Buyurtma qabul qilindi');
       loadOrders();
     } catch (error: any) {
       console.error('❌ Failed to accept order:', error);
-      Alert.alert('Xatolik', 'Buyurtmani qabul qilishda xatolik');
+      showAlert('Xatolik', 'Buyurtmani qabul qilishda xatolik');
     }
   };
 
   const handleCompleteOrder = async (orderId: string) => {
-    Alert.alert(
+    const completeAction = async () => {
+      try {
+        const { error } = await supabase
+          .from('orders')
+          .update({ status: 'completed' })
+          .eq('id', orderId);
+
+        if (error) throw error;
+
+        // Update worker stats
+        if (workerProfile) {
+          const { error: updateError } = await supabase
+            .from('workers')
+            .update({
+              completed_orders: workerProfile.completed_orders + 1,
+            })
+            .eq('id', user!.id);
+
+          if (updateError) console.error('Failed to update stats:', updateError);
+        }
+
+        showAlert('Muvaffaqiyatli!', 'Buyurtma bajarildi');
+        loadOrders();
+        checkWorkerProfile();
+      } catch (error: any) {
+        console.error('Failed to complete order:', error);
+        showAlert('Xatolik', 'Buyurtmani yakunlashda xatolik');
+      }
+    };
+
+    showAlert(
       'Tasdiqlash',
       'Buyurtma bajarilganini tasdiqlaysizmi?',
       [
         { text: 'Yo\'q', style: 'cancel' },
-        {
-          text: 'Ha',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('orders')
-                .update({ status: 'completed' })
-                .eq('id', orderId);
-
-              if (error) throw error;
-
-              // Update worker stats
-              if (workerProfile) {
-                const { error: updateError } = await supabase
-                  .from('workers')
-                  .update({
-                    completed_orders: workerProfile.completed_orders + 1,
-                  })
-                  .eq('id', user!.id);
-
-                if (updateError) console.error('Failed to update stats:', updateError);
-              }
-
-              Alert.alert('Muvaffaqiyatli!', 'Buyurtma bajarildi');
-              loadOrders();
-              checkWorkerProfile();
-            } catch (error: any) {
-              console.error('Failed to complete order:', error);
-              Alert.alert('Xatolik', 'Buyurtmani yakunlashda xatolik');
-            }
-          },
-        },
+        { text: 'Ha', onPress: completeAction },
       ]
     );
   };
@@ -498,6 +501,7 @@ export default function WorkerDashboardScreen() {
           }
         />
       )}
+      <AlertComponent />
     </View>
   );
 }

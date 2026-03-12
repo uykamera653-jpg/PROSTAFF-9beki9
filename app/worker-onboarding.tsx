@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Platform,
   Alert,
   ActivityIndicator,
 } from 'react-native';
@@ -17,6 +18,7 @@ import { useAuth } from '../hooks/useAuth';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { useAlert } from '../components/ui/WebAlert';
 import { spacing, typography, borderRadius } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 
@@ -42,6 +44,7 @@ export default function WorkerOnboardingScreen() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingCategories, setLoadingCategories] = useState(true);
+  const { showAlert, AlertComponent } = useAlert();
 
   useEffect(() => {
     loadCategories();
@@ -59,7 +62,7 @@ export default function WorkerOnboardingScreen() {
       if (data) setCategories(data);
     } catch (error: any) {
       console.error('Failed to load categories:', error);
-      Alert.alert('Xatolik', 'Kategoriyalarni yuklashda xatolik yuz berdi');
+      showAlert('Xatolik', 'Kategoriyalarni yuklashda xatolik yuz berdi');
     } finally {
       setLoadingCategories(false);
     }
@@ -75,15 +78,15 @@ export default function WorkerOnboardingScreen() {
 
   const handleComplete = async () => {
     if (!fullName.trim()) {
-      Alert.alert('Xatolik', 'Ism-familiyani kiriting');
+      showAlert('Xatolik', 'Ism-familiyani kiriting');
       return;
     }
     if (!phone.trim()) {
-      Alert.alert('Xatolik', 'Telefon raqamni kiriting');
+      showAlert('Xatolik', 'Telefon raqamni kiriting');
       return;
     }
     if (selectedCategories.length === 0) {
-      Alert.alert('Xatolik', 'Kamida bitta kategoriya tanlang');
+      showAlert('Xatolik', 'Kamida bitta kategoriya tanlang');
       return;
     }
     if (!user) return;
@@ -147,14 +150,14 @@ export default function WorkerOnboardingScreen() {
 
       if (categoryError) throw categoryError;
 
-      Alert.alert(
+      showAlert(
         'Muvaffaqiyatli!',
         'Ishchi profili saqlandi. Endi buyurtmalarni qabul qilishingiz mumkin.',
         [{ text: 'OK', onPress: () => router.replace('/worker-dashboard') }]
       );
     } catch (error: any) {
       console.error('Failed to complete onboarding:', error);
-      Alert.alert('Xatolik', error.message || 'Profilni saqlashda xatolik yuz berdi');
+      showAlert('Xatolik', error.message || 'Profilni saqlashda xatolik yuz berdi');
     } finally {
       setLoading(false);
     }
@@ -294,6 +297,7 @@ export default function WorkerOnboardingScreen() {
 
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
+      <AlertComponent />
     </View>
   );
 }
