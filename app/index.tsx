@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform } from 'react-native';
 import { Redirect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import { useTranslation } from '../hooks/useTranslation';
@@ -9,6 +11,8 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { spacing, typography } from '../constants/theme';
 import { supabase } from '../lib/supabase';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function IndexScreen() {
   const insets = useSafeAreaInsets();
@@ -31,16 +35,80 @@ export default function IndexScreen() {
     try {
       setLoading(true);
       setError('');
-      
+
+      // Generate redirect URL for all platforms
+      const redirectUrl = AuthSession.makeRedirectUri({
+        scheme: 'onspaceapp',
+        path: 'auth',
+      });
+
+      console.log('🔗 Redirect URL:', redirectUrl);
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+          skipBrowserRedirect: Platform.OS !== 'web',
+        },
       });
 
       if (error) {
+        console.error('OAuth error:', error);
         setError(error.message);
+        setLoading(false);
+        return;
+      }
+
+      // For mobile: Open browser and wait for callback
+      if (Platform.OS !== 'web' && data?.url) {
+        console.log('📱 Opening browser...');
+        const result = await WebBrowser.openAuthSessionAsync(
+          data.url,
+          redirectUrl
+        );
+
+        if (result.type === 'success') {
+          console.log('✅ Browser returned:', result.url);
+          
+          // Extract code from callback URL
+          const url = new URL(result.url);
+          const code = url.searchParams.get('code');
+          
+          if (code) {
+            console.log('🔑 Exchanging code for session...');
+            const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+            
+            if (sessionError) {
+              console.error('❌ Session exchange error:', sessionError);
+              setError(sessionError.message);
+            } else if (sessionData?.session) {
+              console.log('✅ Session created successfully');
+              // Wait for session to propagate
+              await new Promise(resolve => setTimeout(resolve, 500));
+              router.replace('/(tabs)/home');
+            }
+          } else {
+            console.error('❌ No code in callback URL');
+            setError('Kirish bekor qilindi');
+          }
+        } else if (result.type === 'cancel') {
+          console.log('⚠️ User cancelled');
+          setError('Google kirish bekor qilindi');
+        } else {
+          console.error('❌ Auth failed:', result);
+          setError('Google kirish xatoligi');
+        }
+      } else if (Platform.OS === 'web') {
+        // Web platform: browser will redirect automatically
+        console.log('🌐 Web redirect initiated');
       }
     } catch (err: any) {
-      setError(err.message || t.loginError);
+      console.error('❌ Google sign in error:', err);
+      setError(err.message || 'Google kirish xatoligi');
     } finally {
       setLoading(false);
     }

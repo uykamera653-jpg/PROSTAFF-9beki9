@@ -1,5 +1,6 @@
 {
   "expo": {
+    "scheme": "onspaceapp",
     "name": "onspace-app",
     "slug": "onspace-app",
     "version": "1.0.0",

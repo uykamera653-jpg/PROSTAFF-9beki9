@@ -8,6 +8,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string) => Promise<void>;
   logout: () => Promise<void>;
+  signOut: () => Promise<void>;
   updateProfile: (name: string, photoUrl?: string) => Promise<void>;
 }
 
@@ -125,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = async () => {
+  const signOut = async () => {
     try {
       console.log('Logging out...');
       
@@ -148,6 +149,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw error;
     }
   };
+
+  const logout = signOut; // Alias for backward compatibility
 
   const updateProfile = async (name: string, photoUrl?: string) => {
     try {
@@ -183,6 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         login,
         logout,
+        signOut,
         updateProfile,
       }}
     >
