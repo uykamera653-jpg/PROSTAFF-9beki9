@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { Button } from '../components/ui/Button';
 import { useAlert } from '../components/ui/WebAlert';
 import { spacing, typography, borderRadius } from '../constants/theme';
 import { supabase } from '../lib/supabase';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 interface UserProfile {
   id: string;
@@ -40,38 +41,77 @@ export default function AdminPanelScreen() {
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const { showAlert, AlertComponent } = useAlert();
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const hasCheckedAuth = useRef(false);
 
+  // Auth check effect
   useEffect(() => {
-    // Wait until role is loaded
-    if (roleLoading) return;
+    if (roleLoading || hasCheckedAuth.current) return;
 
-    // Check if user is admin or moderator
     if (currentUserRole !== 'admin' && currentUserRole !== 'moderator') {
+      hasCheckedAuth.current = true;
       showAlert('Kirish rad etildi', 'Faqat administratorlar bu sahifaga kirishi mumkin.', [
         { text: 'OK', onPress: () => router.back() }
       ]);
       return;
     }
 
-    // Fetch users if admin or moderator
+    hasCheckedAuth.current = true;
+  }, [currentUserRole, roleLoading]);
+
+  // Data fetching and real-time subscription effect
+  useEffect(() => {
+    if (roleLoading) return;
+    if (currentUserRole !== 'admin' && currentUserRole !== 'moderator') return;
+
+    // Initial fetch
     fetchUsers();
+
+    // Setup real-time subscription
+    channelRef.current = supabase
+      .channel('user_profiles_admin_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_profiles',
+        },
+        () => {
+          // Re-fetch when any change occurs
+          fetchUsers();
+        }
+      )
+      .subscribe();
+
+    // Cleanup
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
   }, [currentUserRole, roleLoading]);
 
   const fetchUsers = async () => {
     try {
       setIsLoading(true);
+      
       const { data, error } = await supabase
         .from('user_profiles')
-        .select('*')
+        .select('id, name, email, role, created_at')
         .order('created_at', { ascending: false });
 
       if (error) {
-        showAlert('Xatolik', `Foydalanuvchilarni yuklab bo'lmadi: ${error.message}`);
-      } else if (data) {
+        setUsers([]);
+        return;
+      }
+      
+      if (data) {
         setUsers(data);
       }
     } catch (error) {
-      showAlert('Xatolik', 'Foydalanuvchilarni yuklashda xatolik yuz berdi');
+      setUsers([]);
     } finally {
       setIsLoading(false);
     }
@@ -83,19 +123,21 @@ export default function AdminPanelScreen() {
     try {
       const { error } = await supabase
         .from('user_profiles')
-        .update({ role: newRole })
+        .update({ role: newRole, updated_at: new Date().toISOString() })
         .eq('id', selectedUser.id);
 
       if (error) {
         showAlert('Xatolik', `Rolni yangilab bo'lmadi: ${error.message}`);
-      } else {
-        showAlert('Muvaffaqiyatli', `Rol ${newRole}ga o'zgartirildi`);
-        setUsers(users.map(u => 
-          u.id === selectedUser.id ? { ...u, role: newRole } : u
-        ));
-        setShowRoleModal(false);
-        setSelectedUser(null);
+        return;
       }
+
+      // Success - modal will close and data will update via real-time subscription
+      showAlert('Muvaffaqiyatli', `Rol ${newRole}ga o'zgartirildi`);
+      setShowRoleModal(false);
+      setSelectedUser(null);
+      
+      // Force refresh to ensure latest data
+      await fetchUsers();
     } catch (error) {
       showAlert('Xatolik', 'Rolni yangilashda xatolik yuz berdi');
     }

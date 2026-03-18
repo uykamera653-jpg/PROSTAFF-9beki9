@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from './useAuth';
 import { supabase } from '../lib/supabase';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 export type UserRole = 'customer' | 'worker' | 'company' | 'admin' | 'moderator';
 
@@ -8,6 +9,7 @@ export function useUserRole() {
   const { user } = useAuth();
   const [role, setRole] = useState<UserRole>('customer');
   const [isLoading, setIsLoading] = useState(true);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -16,11 +18,17 @@ export function useUserRole() {
       return;
     }
 
+    // Initial fetch
     fetchUserRole();
 
+    // Cleanup previous channel if exists
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
+
     // Real-time subscription for role changes
-    const channel = supabase
-      .channel(`user_profile_${user.id}`)
+    channelRef.current = supabase
+      .channel(`user_role_${user.id}_${Date.now()}`)
       .on(
         'postgres_changes',
         {
@@ -31,16 +39,20 @@ export function useUserRole() {
         },
         (payload) => {
           if (payload.new && 'role' in payload.new) {
-            setRole(payload.new.role as UserRole);
+            const newRole = payload.new.role as UserRole;
+            setRole(newRole);
           }
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
-  }, [user]);
+  }, [user?.id]);
 
   const fetchUserRole = async () => {
     try {
@@ -48,7 +60,6 @@ export function useUserRole() {
       
       if (!user?.id) {
         setRole('customer');
-        setIsLoading(false);
         return;
       }
       
@@ -56,14 +67,12 @@ export function useUserRole() {
         .from('user_profiles')
         .select('role')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (error) {
+      if (error || !data) {
         setRole('customer');
-      } else if (data) {
-        setRole(data.role as UserRole);
       } else {
-        setRole('customer');
+        setRole(data.role as UserRole);
       }
     } catch (error) {
       setRole('customer');
