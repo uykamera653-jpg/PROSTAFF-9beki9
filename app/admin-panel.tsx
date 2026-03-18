@@ -101,20 +101,38 @@ export default function AdminPanelScreen() {
     try {
       setIsLoading(true);
       
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('id, name, email, role, created_at')
-        .order('created_at', { ascending: false });
-
-      if (error) {
+      // Call Edge Function instead of direct database query
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session) {
+        console.error('❌ No session');
         setUsers([]);
         return;
       }
-      
-      if (data) {
-        setUsers(data);
+
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.session.access_token}`,
+        },
+        body: JSON.stringify({ operation: 'get_users' }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Failed to fetch users:', errorText);
+        showAlert('Xatolik', `Foydalanuvchilarni yuklashda xatolik: ${errorText}`);
+        setUsers([]);
+        return;
       }
-    } catch (error) {
+
+      const result = await response.json();
+      if (result.users) {
+        setUsers(result.users);
+      }
+    } catch (error: any) {
+      console.error('❌ Fetch users error:', error);
+      showAlert('Xatolik', 'Foydalanuvchilarni yuklashda xatolik');
       setUsers([]);
     } finally {
       setIsLoading(false);
@@ -125,24 +143,44 @@ export default function AdminPanelScreen() {
     if (!selectedUser) return;
 
     try {
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({ role: newRole, updated_at: new Date().toISOString() })
-        .eq('id', selectedUser.id);
-
-      if (error) {
-        showAlert('Xatolik', `Rolni yangilab bo'lmadi: ${error.message}`);
+      // Call Edge Function instead of direct database update
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session) {
+        showAlert('Xatolik', 'Session yo\'q');
         return;
       }
 
-      // Success - modal will close and data will update via real-time subscription
-      showAlert('Muvaffaqiyatli', `Rol ${newRole}ga o'zgartirildi`);
-      setShowRoleModal(false);
-      setSelectedUser(null);
-      
-      // Force refresh to ensure latest data
-      await fetchUsers();
-    } catch (error) {
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.session.access_token}`,
+        },
+        body: JSON.stringify({
+          operation: 'update_role',
+          user_id: selectedUser.id,
+          new_role: newRole,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Failed to update role:', errorText);
+        showAlert('Xatolik', `Rolni yangilashda xatolik: ${errorText}`);
+        return;
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        showAlert('Muvaffaqiyatli', result.message || `Rol ${newRole}ga o'zgartirildi`);
+        setShowRoleModal(false);
+        setSelectedUser(null);
+        
+        // Force refresh to ensure latest data
+        await fetchUsers();
+      }
+    } catch (error: any) {
+      console.error('❌ Role change error:', error);
       showAlert('Xatolik', 'Rolni yangilashda xatolik yuz berdi');
     }
   };
