@@ -51,7 +51,7 @@ export default function AdminPanelScreen() {
     if (currentUserRole !== 'admin' && currentUserRole !== 'moderator') {
       hasCheckedAuth.current = true;
       showAlert('Kirish rad etildi', 'Faqat administratorlar bu sahifaga kirishi mumkin.', [
-        { text: 'OK', onPress: () => router.back() }
+        { text: 'OK', onPress: () => router.replace('/') }
       ]);
       return;
     }

@@ -7,12 +7,36 @@ import * as AuthSession from 'expo-auth-session';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import { useTranslation } from '../hooks/useTranslation';
+import { useUserRole } from '../hooks/useUserRole';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { spacing, typography } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
+
+// Role-based redirect component
+function RoleBasedRedirect() {
+  const { role, isLoading } = useUserRole();
+  
+  if (isLoading) {
+    return null;
+  }
+  
+  // Redirect based on user role
+  switch (role) {
+    case 'worker':
+      return <Redirect href="/worker-dashboard" />;
+    case 'company':
+      return <Redirect href="/company-dashboard" />;
+    case 'admin':
+    case 'moderator':
+      return <Redirect href="/admin-panel" />;
+    case 'customer':
+    default:
+      return <Redirect href="/(tabs)/home" />;
+  }
+}
 
 export default function IndexScreen() {
   const insets = useSafeAreaInsets();
@@ -38,7 +62,7 @@ export default function IndexScreen() {
   }
 
   if (user) {
-    return <Redirect href="/(tabs)/home" />;
+    return <RoleBasedRedirect />;
   }
 
   const handleGoogleSignIn = async () => {

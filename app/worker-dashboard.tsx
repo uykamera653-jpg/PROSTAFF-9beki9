@@ -51,7 +51,7 @@ export default function WorkerDashboardScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
 
   const [selectedTab, setSelectedTab] = useState<OrderStatus>('pending');
   const [orders, setOrders] = useState<WorkerOrder[]>([]);
@@ -61,6 +61,7 @@ export default function WorkerDashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const { showAlert, AlertComponent } = useAlert();
 
+  // Redirect to login if not authenticated
   useEffect(() => {
     if (!user) {
       router.replace('/');
@@ -283,6 +284,15 @@ export default function WorkerDashboardScreen() {
     );
   };
 
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/');
+  };
+
+  if (!user) {
+    return null;
+  }
+
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -351,9 +361,7 @@ export default function WorkerDashboardScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.md, backgroundColor: theme.surface }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
-        </TouchableOpacity>
+        <View style={{ width: 40 }} />
         <Text style={[styles.headerTitle, { color: theme.text }]}>
           {t.workerDashboard || 'Ishchi paneli'}
         </Text>

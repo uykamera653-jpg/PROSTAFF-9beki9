@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -35,9 +35,16 @@ export default function CompanyDashboardScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
 
   const [selectedTab, setSelectedTab] = useState<OrderStatus>('pending');
+  
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!user) {
+      router.replace('/');
+    }
+  }, [user]);
   
   // Mock data - replace with real data from Supabase
   const [orders] = useState<CompanyOrder[]>([
@@ -62,6 +69,15 @@ export default function CompanyDashboardScreen() {
       createdAt: new Date().toISOString(),
     },
   ]);
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/');
+  };
+
+  if (!user) {
+    return null;
+  }
 
   const filteredOrders = orders.filter(order => order.status === selectedTab);
 
@@ -128,13 +144,11 @@ export default function CompanyDashboardScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.md, backgroundColor: theme.surface }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
-        </TouchableOpacity>
+        <View style={{ width: 40 }} />
         <Text style={[styles.headerTitle, { color: theme.text }]}>
           {t.companyDashboard || 'Firma paneli'}
         </Text>
-        <TouchableOpacity onPress={() => router.push('/(tabs)/profile')}>
+        <TouchableOpacity onPress={() => router.push('/company-profile')}>
           <Ionicons name="person-circle" size={28} color={theme.primary} />
         </TouchableOpacity>
       </View>
