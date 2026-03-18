@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,13 +17,25 @@ export default function CompaniesScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { t } = useTranslation();
-  const { companies } = useCompanies();
+  const { companies, refetch } = useCompanies();
   const { user } = useAuth();
   const { addFavorite, removeFavorite, isFavorite } = useFavorites();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'rating' | 'newest'>('rating');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    // Initial fetch on mount
+    handleRefresh();
+  }, []);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await refetch();
+    setIsRefreshing(false);
+  };
 
   const categories = [
     { id: 'all', name: t.allCategories, icon: 'apps' },
@@ -50,6 +62,7 @@ export default function CompaniesScreen() {
     }
   };
 
+  // Filter companies - only show online companies (already filtered in context)
   const filteredCompanies = companies
     .filter((company) => {
       const matchesSearch =
@@ -72,7 +85,7 @@ export default function CompaniesScreen() {
       serviceType={item.serviceType}
       phoneNumber={item.phoneNumber}
       address={item.address}
-      photoUrl={item.photoUrls[0]}
+      photoUrl={item.photoUrls[0] || 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800'}
       rating={item.rating}
       isFavorite={user ? isFavorite(item.id, user.id) : false}
       onPress={() => handleCompanyPress(item.id)}
@@ -165,14 +178,36 @@ export default function CompaniesScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-        
-        <FlatList
-          data={filteredCompanies}
-          renderItem={renderCompany}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.list}
-        />
+
+        {isRefreshing && companies.length === 0 ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.primary} />
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Firmalar yuklanmoqda...</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredCompanies}
+            renderItem={renderCompany}
+            keyExtractor={(item) => item.id}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.list}
+            onRefresh={handleRefresh}
+            refreshing={isRefreshing}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Ionicons name="business-outline" size={64} color={theme.textTertiary} />
+                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                  {searchQuery || selectedCategory !== 'all'
+                    ? t.noCompaniesFound
+                    : 'Hozircha online firmalar yo\'q'}
+                </Text>
+                <Text style={[styles.emptySubtext, { color: theme.textTertiary }]}>
+                  Faqat online rejimidagi firmalar ko'rsatiladi
+                </Text>
+              </View>
+            }
+          />
+        )}
       </View>
     </View>
   );
@@ -256,5 +291,29 @@ const styles = StyleSheet.create({
   categoryChipText: {
     ...typography.bodyMedium,
     fontSize: 14,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.xxl,
+    gap: spacing.md,
+  },
+  loadingText: {
+    ...typography.body,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xxl * 2,
+    gap: spacing.md,
+  },
+  emptyText: {
+    ...typography.body,
+    textAlign: 'center',
+  },
+  emptySubtext: {
+    ...typography.small,
+    textAlign: 'center',
   },
 });

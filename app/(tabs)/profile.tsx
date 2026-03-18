@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Modal, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +15,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { spacing, typography, borderRadius } from '../../constants/theme';
 import { Language } from '../../constants/translations';
+import { supabase } from '../../lib/supabase';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -35,14 +36,43 @@ export default function ProfileScreen() {
   const [showNameModal, setShowNameModal] = useState(false);
   const [showLangModal, setShowLangModal] = useState(false);
   const [newName, setNewName] = useState(user?.name || '');
+  const [hasCompanyProfile, setHasCompanyProfile] = useState(false);
+  const [isCheckingProfile, setIsCheckingProfile] = useState(false);
 
-  // Auto-refresh role when screen is focused
+  // Auto-refresh role and check company profile when screen is focused
   useEffect(() => {
     console.log('Profile: Current role =', role, 'User ID =', user?.id);
     if (user) {
       refetchRole(); // Refresh role when profile opens
+      if (role === 'company') {
+        checkCompanyProfile();
+      }
     }
-  }, [user]);
+  }, [user, role]);
+
+  const checkCompanyProfile = async () => {
+    if (!user?.id) return;
+    
+    setIsCheckingProfile(true);
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('id')
+        .eq('id', user.id)
+        .single();
+
+      if (data) {
+        setHasCompanyProfile(true);
+      } else {
+        setHasCompanyProfile(false);
+      }
+    } catch (error) {
+      console.error('Error checking company profile:', error);
+      setHasCompanyProfile(false);
+    } finally {
+      setIsCheckingProfile(false);
+    }
+  };
 
   const handleSaveName = async () => {
     if (newName.trim()) {
@@ -125,6 +155,35 @@ export default function ProfileScreen() {
         </Card>
 
         <View style={styles.section}>
+          {role === 'company' && (
+            isCheckingProfile ? (
+              <View style={[styles.menuItem, { backgroundColor: theme.surface }]}>
+                <ActivityIndicator size="small" color={theme.primary} />
+                <Text style={[styles.menuText, { color: theme.textSecondary }]}>Tekshirilmoqda...</Text>
+              </View>
+            ) : hasCompanyProfile ? (
+              <TouchableOpacity
+                style={[styles.menuItem, { backgroundColor: theme.surface, borderLeftWidth: 3, borderLeftColor: theme.warning }]}
+                onPress={() => router.push('/company-profile')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="business" size={24} color={theme.warning} />
+                <Text style={[styles.menuText, { color: theme.text, fontWeight: '600' }]}>Firma profili</Text>
+                <Ionicons name="chevron-forward" size={24} color={theme.textTertiary} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.menuItem, { backgroundColor: theme.surface, borderLeftWidth: 3, borderLeftColor: theme.warning }]}
+                onPress={() => router.push('/company-onboarding')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="business-outline" size={24} color={theme.warning} />
+                <Text style={[styles.menuText, { color: theme.text, fontWeight: '600' }]}>Firma profili yaratish</Text>
+                <Ionicons name="chevron-forward" size={24} color={theme.textTertiary} />
+              </TouchableOpacity>
+            )
+          )}
+
           {(role === 'admin' || role === 'moderator') && (
             <TouchableOpacity
               style={[styles.menuItem, { backgroundColor: theme.surface, borderLeftWidth: 3, borderLeftColor: theme.error }]}
