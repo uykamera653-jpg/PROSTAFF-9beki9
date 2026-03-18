@@ -1,4 +1,4 @@
-import { Tabs, Redirect } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,7 +11,6 @@ export default function TabLayout() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { role, isLoading } = useUserRole();
-  const router = useRouter();
 
   // Loading state - ko'rsatmaslik
   if (isLoading) {
@@ -19,24 +18,9 @@ export default function TabLayout() {
   }
 
   // Faqat customer rollari uchun tablarni ko'rsatish
-  // Boshqa rollar (admin, worker, company) uchun tablar kerak emas
+  // Boshqa rollar uchun null qaytarish (index.tsx redirect qiladi)
   if (role !== 'customer') {
-    console.log('⚠️ Non-customer role detected in tabs, redirecting...', role);
-    // Redirect to appropriate screen
-    const redirectPath = (() => {
-      switch (role) {
-        case 'worker':
-          return '/worker-dashboard';
-        case 'company':
-          return '/company-dashboard';
-        case 'admin':
-        case 'moderator':
-          return '/admin-panel';
-        default:
-          return '/';
-      }
-    })();
-    router.replace(redirectPath as any);
+    console.log('⚠️ Non-customer role in tabs layout, hiding tabs:', role);
     return null;
   }
 
