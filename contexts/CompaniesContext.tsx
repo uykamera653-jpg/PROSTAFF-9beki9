@@ -14,9 +14,20 @@ export const CompaniesContext = createContext<CompaniesContextType | undefined>(
 
 export function CompaniesProvider({ children }: { children: ReactNode }) {
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    fetchCompanies();
+    // Delay initial fetch to speed up app loading
+    const timer = setTimeout(() => {
+      fetchCompanies();
+      setIsInitialized(true);
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!isInitialized) return;
 
     // Real-time subscription for company updates
     const channel = supabase
@@ -37,7 +48,7 @@ export function CompaniesProvider({ children }: { children: ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [isInitialized]);
 
   const fetchCompanies = async () => {
     try {

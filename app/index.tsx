@@ -27,7 +27,17 @@ export default function IndexScreen() {
   const [error, setError] = useState('');
 
 
-  if (user && !isLoading) {
+  // Show loading screen while auth state is being checked
+  if (isLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={[styles.logo, { color: theme.primary }]}>Prostaff</Text>
+        <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: spacing.md }]}>Yuklanmoqda...</Text>
+      </View>
+    );
+  }
+
+  if (user) {
     return <Redirect href="/(tabs)/home" />;
   }
 
