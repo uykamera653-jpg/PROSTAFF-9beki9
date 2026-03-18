@@ -7,8 +7,6 @@ import {
   TouchableOpacity,
   Modal,
   ActivityIndicator,
-  Alert,
-  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +16,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import { useUserRole, UserRole } from '../hooks/useUserRole';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { useAlert } from '../components/ui/WebAlert';
 import { spacing, typography, borderRadius } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 
@@ -40,12 +39,14 @@ export default function AdminPanelScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [showRoleModal, setShowRoleModal] = useState(false);
+  const { showAlert, AlertComponent } = useAlert();
 
   useEffect(() => {
     // Check if user is admin or moderator
     if (!roleLoading && currentUserRole !== 'admin' && currentUserRole !== 'moderator') {
-      Alert.alert('Access Denied', 'Only administrators can access this page.');
-      router.back();
+      showAlert('Kirish rad etildi', 'Faqat administratorlar bu sahifaga kirishi mumkin.', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
       return;
     }
 
@@ -64,23 +65,15 @@ export default function AdminPanelScreen() {
 
       if (error) {
         console.error('Failed to fetch users:', error.message);
-        showAlert('Error', `Failed to load users: ${error.message}`);
+        showAlert('Xatolik', `Foydalanuvchilarni yuklab bo'lmadi: ${error.message}`);
       } else if (data) {
         setUsers(data);
       }
     } catch (error) {
       console.error('Error fetching users:', error);
-      showAlert('Error', 'An error occurred while loading users');
+      showAlert('Xatolik', 'Foydalanuvchilarni yuklashda xatolik yuz berdi');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const showAlert = (title: string, message: string) => {
-    if (Platform.OS === 'web') {
-      alert(`${title}\n${message}`);
-    } else {
-      Alert.alert(title, message);
     }
   };
 
@@ -95,9 +88,9 @@ export default function AdminPanelScreen() {
 
       if (error) {
         console.error('Failed to update role:', error.message);
-        showAlert('Error', `Failed to update role: ${error.message}`);
+        showAlert('Xatolik', `Rolni yangilab bo'lmadi: ${error.message}`);
       } else {
-        showAlert('Success', `Role updated to ${newRole} successfully`);
+        showAlert('Muvaffaqiyatli', `Rol ${newRole}ga o'zgartirildi`);
         setUsers(users.map(u => 
           u.id === selectedUser.id ? { ...u, role: newRole } : u
         ));
@@ -106,7 +99,7 @@ export default function AdminPanelScreen() {
       }
     } catch (error) {
       console.error('Error updating role:', error);
-      showAlert('Error', 'An error occurred while updating role');
+      showAlert('Xatolik', 'Rolni yangilashda xatolik yuz berdi');
     }
   };
 
@@ -287,6 +280,7 @@ export default function AdminPanelScreen() {
           </View>
         </View>
       </Modal>
+      <AlertComponent />
     </View>
   );
 }
