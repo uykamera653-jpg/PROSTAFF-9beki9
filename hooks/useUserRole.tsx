@@ -59,9 +59,12 @@ export function useUserRole() {
       setIsLoading(true);
       
       if (!user?.id) {
+        console.log('⚠️ useUserRole: No user ID');
         setRole('customer');
         return;
       }
+      
+      console.log('🔍 useUserRole: Fetching role for user:', user.id);
       
       const { data, error } = await supabase
         .from('user_profiles')
@@ -69,15 +72,22 @@ export function useUserRole() {
         .eq('id', user.id)
         .maybeSingle();
 
-      if (error || !data) {
+      if (error) {
+        console.error('❌ useUserRole: Database error:', error);
+        setRole('customer');
+      } else if (!data) {
+        console.log('⚠️ useUserRole: No profile found - defaulting to customer');
         setRole('customer');
       } else {
+        console.log('✅ useUserRole: Role fetched:', data.role);
         setRole(data.role as UserRole);
       }
     } catch (error) {
+      console.error('❌ useUserRole: Exception:', error);
       setRole('customer');
     } finally {
       setIsLoading(false);
+      console.log('✅ useUserRole: Loading complete');
     }
   };
 
