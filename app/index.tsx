@@ -86,14 +86,12 @@ export default function IndexScreen() {
 
     console.log('🚀 Redirecting to:', redirectPath);
     
-    // Small delay to ensure state is ready
-    setTimeout(() => {
-      router.replace(redirectPath as any);
-    }, 100);
+    // Immediate redirect - no delay needed
+    router.replace(redirectPath as any);
   }, [isLoading, user, roleLoading, role]);
 
-  // Show loading screen while auth state is being checked
-  if (isLoading || (user && roleLoading)) {
+  // Show loading screen while checking auth or role
+  if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }]}>
         <Text style={[styles.logo, { color: theme.primary }]}>Prostaff</Text>
@@ -103,12 +101,24 @@ export default function IndexScreen() {
     );
   }
 
-  // User is logged in, navigation handled by useEffect
-  if (user) {
+  // User is logged in, show loading while role is being determined
+  if (user && roleLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }]}>
         <Text style={[styles.logo, { color: theme.primary }]}>Prostaff</Text>
         <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: spacing.lg }} />
+        <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: spacing.md }]}>Profil yuklanmoqda...</Text>
+      </View>
+    );
+  }
+
+  // User is logged in and role is loaded, show loading while navigating
+  if (user && !roleLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={[styles.logo, { color: theme.primary }]}>Prostaff</Text>
+        <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: spacing.lg }} />
+        <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: spacing.md }]}>Kirmoqda...</Text>
       </View>
     );
   }

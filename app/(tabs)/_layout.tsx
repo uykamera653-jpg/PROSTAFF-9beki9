@@ -12,15 +12,9 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const { role, isLoading } = useUserRole();
 
-  // Loading state - ko'rsatmaslik
-  if (isLoading) {
-    return null;
-  }
-
-  // Faqat customer rollari uchun tablarni ko'rsatish
-  // Boshqa rollar uchun null qaytarish (index.tsx redirect qiladi)
-  if (role !== 'customer') {
-    console.log('⚠️ Non-customer role in tabs layout, hiding tabs:', role);
+  // Loading state yoki non-customer role - tablarni yashirish
+  if (isLoading || role !== 'customer') {
+    console.log('⚠️ Hiding tabs:', { isLoading, role });
     return null;
   }
 
