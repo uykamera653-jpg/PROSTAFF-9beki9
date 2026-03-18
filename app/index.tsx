@@ -30,6 +30,28 @@ export default function IndexScreen() {
 
   const { role, isLoading: roleLoading } = useUserRole();
 
+  // Web platform: Handle OAuth callback from URL
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      // Check if we have OAuth callback params
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const queryParams = new URLSearchParams(window.location.search);
+      
+      if (hashParams.has('access_token') || queryParams.has('code')) {
+        console.log('🔐 OAuth callback detected');
+        setLoading(true);
+        // Wait a bit for Supabase to process the session
+        setTimeout(() => {
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            console.log('✅ Session after OAuth:', !!session);
+            setLoading(false);
+            // AuthContext will handle the redirect via onAuthStateChange
+          });
+        }, 1000);
+      }
+    }
+  }, []);
+
   // Handle navigation based on role after auth
   useEffect(() => {
     // Wait for both auth and role to finish loading
@@ -145,31 +167,33 @@ export default function IndexScreen() {
             if (sessionError) {
               console.error('❌ Session exchange error:', sessionError);
               setError(sessionError.message);
+              setLoading(false);
             } else if (sessionData?.session) {
               console.log('✅ Session created successfully');
-              // Wait for session to propagate
-              await new Promise(resolve => setTimeout(resolve, 500));
-              router.replace('/(tabs)/home');
+              // Navigation handled by useEffect
             }
           } else {
             console.error('❌ No code in callback URL');
             setError('Kirish bekor qilindi');
+            setLoading(false);
           }
         } else if (result.type === 'cancel') {
           console.log('⚠️ User cancelled');
           setError('Google kirish bekor qilindi');
+          setLoading(false);
         } else {
           console.error('❌ Auth failed:', result);
           setError('Google kirish xatoligi');
+          setLoading(false);
         }
       } else if (Platform.OS === 'web') {
         // Web platform: browser will redirect automatically
-        console.log('🌐 Web redirect initiated');
+        console.log('🌐 Web redirect initiated - browser will handle callback');
+        // Don't set loading to false - let the callback handler manage it
       }
     } catch (err: any) {
       console.error('❌ Google sign in error:', err);
       setError(err.message || 'Google kirish xatoligi');
-    } finally {
       setLoading(false);
     }
   };
