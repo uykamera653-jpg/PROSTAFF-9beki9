@@ -42,17 +42,19 @@ export default function AdminPanelScreen() {
   const { showAlert, AlertComponent } = useAlert();
 
   useEffect(() => {
+    // Wait until role is loaded
+    if (roleLoading) return;
+
     // Check if user is admin or moderator
-    if (!roleLoading && currentUserRole !== 'admin' && currentUserRole !== 'moderator') {
+    if (currentUserRole !== 'admin' && currentUserRole !== 'moderator') {
       showAlert('Kirish rad etildi', 'Faqat administratorlar bu sahifaga kirishi mumkin.', [
         { text: 'OK', onPress: () => router.back() }
       ]);
       return;
     }
 
-    if (currentUserRole === 'admin' || currentUserRole === 'moderator') {
-      fetchUsers();
-    }
+    // Fetch users if admin or moderator
+    fetchUsers();
   }, [currentUserRole, roleLoading]);
 
   const fetchUsers = async () => {
@@ -151,7 +153,7 @@ export default function AdminPanelScreen() {
     </Card>
   );
 
-  if (roleLoading || (currentUserRole !== 'admin' && currentUserRole !== 'moderator' && !roleLoading)) {
+  if (roleLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={[styles.header, { paddingTop: insets.top + spacing.md, backgroundColor: theme.surface }]}>
@@ -163,6 +165,7 @@ export default function AdminPanelScreen() {
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Yuklanmoqda...</Text>
         </View>
       </View>
     );
@@ -390,6 +393,10 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     ...typography.body,
+  },
+  loadingText: {
+    ...typography.body,
+    marginTop: spacing.md,
   },
   modalOverlay: {
     flex: 1,
