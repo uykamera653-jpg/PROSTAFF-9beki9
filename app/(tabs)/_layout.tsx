@@ -1,14 +1,27 @@
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
+import { useUserRole } from '../../hooks/useUserRole';
 
 export default function TabLayout() {
   const { theme } = useTheme();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { role, isLoading } = useUserRole();
+
+  // Loading state - ko'rsatmaslik
+  if (isLoading) {
+    return null;
+  }
+
+  // Faqat customer rollari uchun tablarni ko'rsatish
+  // Boshqa rollar (admin, worker, company) uchun tablar kerak emas
+  if (role !== 'customer') {
+    return null;
+  }
 
   return (
     <Tabs
