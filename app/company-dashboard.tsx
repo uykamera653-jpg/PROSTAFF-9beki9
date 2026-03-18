@@ -39,13 +39,6 @@ export default function CompanyDashboardScreen() {
 
   const [selectedTab, setSelectedTab] = useState<OrderStatus>('pending');
   
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!user) {
-      router.replace('/');
-    }
-  }, [user]);
-  
   // Mock data - replace with real data from Supabase
   const [orders] = useState<CompanyOrder[]>([
     {
@@ -74,10 +67,6 @@ export default function CompanyDashboardScreen() {
     await logout();
     router.replace('/');
   };
-
-  if (!user) {
-    return null;
-  }
 
   const filteredOrders = orders.filter(order => order.status === selectedTab);
 

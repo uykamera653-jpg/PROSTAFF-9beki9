@@ -46,15 +46,17 @@ export default function AdminPanelScreen() {
 
   // Auth check effect
   useEffect(() => {
-    if (roleLoading) return;
+    if (roleLoading) {
+      console.log('⏳ Admin panel - Role loading...');
+      return;
+    }
 
     console.log('🔍 Admin panel - Current role:', currentUserRole);
 
     if (currentUserRole !== 'admin' && currentUserRole !== 'moderator') {
       console.log('⛔ Access denied - redirecting to home');
-      showAlert('Kirish rad etildi', 'Faqat administratorlar bu sahifaga kirishi mumkin.', [
-        { text: 'OK', onPress: () => router.replace('/') }
-      ]);
+      // Immediate redirect without alert to avoid white screen
+      router.replace('/');
       return;
     }
 

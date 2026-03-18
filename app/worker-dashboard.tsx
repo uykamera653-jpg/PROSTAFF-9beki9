@@ -61,13 +61,11 @@ export default function WorkerDashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const { showAlert, AlertComponent } = useAlert();
 
-  // Redirect to login if not authenticated
+  // Check worker profile on mount
   useEffect(() => {
-    if (!user) {
-      router.replace('/');
-      return;
+    if (user) {
+      checkWorkerProfile();
     }
-    checkWorkerProfile();
   }, [user]);
 
   useEffect(() => {
@@ -111,8 +109,8 @@ export default function WorkerDashboardScreen() {
   };
 
   const loadOrders = async () => {
-    if (!user) {
-      console.log('⚠️ No user, skipping load');
+    if (!user?.id) {
+      console.log('⚠️ No user ID, skipping load');
       return;
     }
 
@@ -174,8 +172,8 @@ export default function WorkerDashboardScreen() {
   };
 
   const setupRealtimeSubscription = () => {
-    if (!user) {
-      console.log('⚠️ No user, skipping subscription');
+    if (!user?.id) {
+      console.log('⚠️ No user ID, skipping subscription');
       return () => {};
     }
 
@@ -288,10 +286,6 @@ export default function WorkerDashboardScreen() {
     await logout();
     router.replace('/');
   };
-
-  if (!user) {
-    return null;
-  }
 
   if (loading) {
     return (
