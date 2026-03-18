@@ -46,17 +46,19 @@ export default function AdminPanelScreen() {
 
   // Auth check effect
   useEffect(() => {
-    if (roleLoading || hasCheckedAuth.current) return;
+    if (roleLoading) return;
+
+    console.log('🔍 Admin panel - Current role:', currentUserRole);
 
     if (currentUserRole !== 'admin' && currentUserRole !== 'moderator') {
-      hasCheckedAuth.current = true;
+      console.log('⛔ Access denied - redirecting to home');
       showAlert('Kirish rad etildi', 'Faqat administratorlar bu sahifaga kirishi mumkin.', [
         { text: 'OK', onPress: () => router.replace('/') }
       ]);
       return;
     }
 
-    hasCheckedAuth.current = true;
+    console.log('✅ Admin access granted');
   }, [currentUserRole, roleLoading]);
 
   // Data fetching and real-time subscription effect

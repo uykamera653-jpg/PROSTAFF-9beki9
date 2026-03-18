@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform } from 'react-native';
-import { Redirect, useRouter } from 'expo-router';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ActivityIndicator } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
@@ -15,29 +15,6 @@ import { supabase } from '../lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
 
-// Role-based redirect component
-function RoleBasedRedirect() {
-  const { role, isLoading } = useUserRole();
-  
-  if (isLoading) {
-    return null;
-  }
-  
-  // Redirect based on user role
-  switch (role) {
-    case 'worker':
-      return <Redirect href="/worker-dashboard" />;
-    case 'company':
-      return <Redirect href="/company-dashboard" />;
-    case 'admin':
-    case 'moderator':
-      return <Redirect href="/admin-panel" />;
-    case 'customer':
-    default:
-      return <Redirect href="/(tabs)/home" />;
-  }
-}
-
 export default function IndexScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
@@ -51,18 +28,51 @@ export default function IndexScreen() {
   const [error, setError] = useState('');
 
 
+  const { role, isLoading: roleLoading } = useUserRole();
+
+  // Handle navigation based on role after auth
+  useEffect(() => {
+    if (!isLoading && user && !roleLoading) {
+      // Redirect based on user role
+      const redirectPath = (() => {
+        switch (role) {
+          case 'worker':
+            return '/worker-dashboard';
+          case 'company':
+            return '/company-dashboard';
+          case 'admin':
+          case 'moderator':
+            return '/admin-panel';
+          case 'customer':
+          default:
+            return '/(tabs)/home';
+        }
+      })();
+
+      console.log('✅ Redirecting to:', redirectPath, 'Role:', role);
+      router.replace(redirectPath as any);
+    }
+  }, [isLoading, user, roleLoading, role]);
+
   // Show loading screen while auth state is being checked
-  if (isLoading) {
+  if (isLoading || (user && roleLoading)) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }]}>
         <Text style={[styles.logo, { color: theme.primary }]}>Prostaff</Text>
+        <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: spacing.lg }} />
         <Text style={[styles.subtitle, { color: theme.textSecondary, marginTop: spacing.md }]}>Yuklanmoqda...</Text>
       </View>
     );
   }
 
+  // User is logged in, navigation handled by useEffect
   if (user) {
-    return <RoleBasedRedirect />;
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={[styles.logo, { color: theme.primary }]}>Prostaff</Text>
+        <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: spacing.lg }} />
+      </View>
+    );
   }
 
   const handleGoogleSignIn = async () => {

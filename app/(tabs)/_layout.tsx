@@ -11,6 +11,7 @@ export default function TabLayout() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { role, isLoading } = useUserRole();
+  const router = useRouter();
 
   // Loading state - ko'rsatmaslik
   if (isLoading) {
@@ -20,6 +21,22 @@ export default function TabLayout() {
   // Faqat customer rollari uchun tablarni ko'rsatish
   // Boshqa rollar (admin, worker, company) uchun tablar kerak emas
   if (role !== 'customer') {
+    console.log('⚠️ Non-customer role detected in tabs, redirecting...', role);
+    // Redirect to appropriate screen
+    const redirectPath = (() => {
+      switch (role) {
+        case 'worker':
+          return '/worker-dashboard';
+        case 'company':
+          return '/company-dashboard';
+        case 'admin':
+        case 'moderator':
+          return '/admin-panel';
+        default:
+          return '/';
+      }
+    })();
+    router.replace(redirectPath as any);
     return null;
   }
 
