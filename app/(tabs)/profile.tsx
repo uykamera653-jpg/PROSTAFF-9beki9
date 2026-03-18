@@ -128,7 +128,10 @@ export default function ProfileScreen() {
           {(role === 'admin' || role === 'moderator') && (
             <TouchableOpacity
               style={[styles.menuItem, { backgroundColor: theme.surface, borderLeftWidth: 3, borderLeftColor: theme.error }]}
-              onPress={() => router.push('/admin-panel')}
+              onPress={() => {
+                console.log('🔴 Admin Panel button pressed - Current role:', role);
+                router.push('/admin-panel');
+              }}
               activeOpacity={0.7}
             >
               <Ionicons name="shield-checkmark" size={24} color={theme.error} />
