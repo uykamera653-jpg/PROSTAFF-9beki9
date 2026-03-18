@@ -41,7 +41,6 @@ export default function ProfileScreen() {
 
   // Auto-refresh role and check company profile when screen is focused
   useEffect(() => {
-    console.log('Profile: Current role =', role, 'User ID =', user?.id);
     if (user) {
       refetchRole(); // Refresh role when profile opens
       if (role === 'company') {
@@ -67,7 +66,6 @@ export default function ProfileScreen() {
         setHasCompanyProfile(false);
       }
     } catch (error) {
-      console.error('Error checking company profile:', error);
       setHasCompanyProfile(false);
     } finally {
       setIsCheckingProfile(false);
@@ -89,11 +87,8 @@ export default function ProfileScreen() {
   const handleLogout = async () => {
     try {
       await logout();
-      // Force navigation to login page
       router.replace('/');
     } catch (error) {
-      console.error('Logout error:', error);
-      // Still navigate even on error
       router.replace('/');
     }
   };
@@ -187,10 +182,7 @@ export default function ProfileScreen() {
           {(role === 'admin' || role === 'moderator') && (
             <TouchableOpacity
               style={[styles.menuItem, { backgroundColor: theme.surface, borderLeftWidth: 3, borderLeftColor: theme.error }]}
-              onPress={() => {
-                console.log('🔴 Admin Panel button pressed - Current role:', role);
-                router.push('/admin-panel');
-              }}
+              onPress={() => router.push('/admin-panel')}
               activeOpacity={0.7}
             >
               <Ionicons name="shield-checkmark" size={24} color={theme.error} />

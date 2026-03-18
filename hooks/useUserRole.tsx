@@ -11,13 +11,11 @@ export function useUserRole() {
 
   useEffect(() => {
     if (!user) {
-      console.log('useUserRole: No user, setting role to customer');
       setRole('customer');
       setIsLoading(false);
       return;
     }
 
-    console.log('useUserRole: User changed, fetching role for:', user.id);
     fetchUserRole();
 
     // Real-time subscription for role changes
@@ -32,7 +30,6 @@ export function useUserRole() {
           filter: `id=eq.${user.id}`,
         },
         (payload) => {
-          console.log('🔄 Role changed in database:', payload.new);
           if (payload.new && 'role' in payload.new) {
             setRole(payload.new.role as UserRole);
           }
@@ -41,7 +38,6 @@ export function useUserRole() {
       .subscribe();
 
     return () => {
-      console.log('Unsubscribing from role changes');
       supabase.removeChannel(channel);
     };
   }, [user]);
@@ -63,17 +59,13 @@ export function useUserRole() {
         .single();
 
       if (error) {
-        console.error('❌ Failed to fetch user role:', error.message);
         setRole('customer');
       } else if (data) {
-        console.log('✅ User role fetched successfully:', data.role);
         setRole(data.role as UserRole);
       } else {
-        console.log('⚠️ No role data found, defaulting to customer');
         setRole('customer');
       }
     } catch (error) {
-      console.error('Error fetching user role:', error);
       setRole('customer');
     } finally {
       setIsLoading(false);

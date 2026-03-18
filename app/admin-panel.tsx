@@ -42,11 +42,8 @@ export default function AdminPanelScreen() {
   const { showAlert, AlertComponent } = useAlert();
 
   useEffect(() => {
-    console.log('🔵 Admin Panel useEffect - roleLoading:', roleLoading, 'currentUserRole:', currentUserRole);
-    
     // Check if user is admin or moderator
     if (!roleLoading && currentUserRole !== 'admin' && currentUserRole !== 'moderator') {
-      console.log('❌ Access denied - redirecting back');
       showAlert('Kirish rad etildi', 'Faqat administratorlar bu sahifaga kirishi mumkin.', [
         { text: 'OK', onPress: () => router.back() }
       ]);
@@ -54,14 +51,12 @@ export default function AdminPanelScreen() {
     }
 
     if (currentUserRole === 'admin' || currentUserRole === 'moderator') {
-      console.log('✅ Access granted - fetching users');
       fetchUsers();
     }
   }, [currentUserRole, roleLoading]);
 
   const fetchUsers = async () => {
     try {
-      console.log('📋 Fetching users...');
       setIsLoading(true);
       const { data, error } = await supabase
         .from('user_profiles')
@@ -69,14 +64,11 @@ export default function AdminPanelScreen() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('❌ Failed to fetch users:', error.message);
         showAlert('Xatolik', `Foydalanuvchilarni yuklab bo'lmadi: ${error.message}`);
       } else if (data) {
-        console.log('✅ Fetched', data.length, 'users');
         setUsers(data);
       }
     } catch (error) {
-      console.error('❌ Error fetching users:', error);
       showAlert('Xatolik', 'Foydalanuvchilarni yuklashda xatolik yuz berdi');
     } finally {
       setIsLoading(false);
@@ -93,7 +85,6 @@ export default function AdminPanelScreen() {
         .eq('id', selectedUser.id);
 
       if (error) {
-        console.error('Failed to update role:', error.message);
         showAlert('Xatolik', `Rolni yangilab bo'lmadi: ${error.message}`);
       } else {
         showAlert('Muvaffaqiyatli', `Rol ${newRole}ga o'zgartirildi`);
@@ -104,7 +95,6 @@ export default function AdminPanelScreen() {
         setSelectedUser(null);
       }
     } catch (error) {
-      console.error('Error updating role:', error);
       showAlert('Xatolik', 'Rolni yangilashda xatolik yuz berdi');
     }
   };

@@ -29,7 +29,6 @@ export function CompaniesProvider({ children }: { children: ReactNode }) {
           table: 'companies',
         },
         () => {
-          console.log('Companies data changed, refetching...');
           fetchCompanies();
         }
       )
@@ -50,7 +49,6 @@ export function CompaniesProvider({ children }: { children: ReactNode }) {
         .order('rating', { ascending: false });
 
       if (error) {
-        console.error('Failed to fetch companies:', error);
         return;
       }
 
@@ -72,7 +70,7 @@ export function CompaniesProvider({ children }: { children: ReactNode }) {
         setCompanies(mappedCompanies);
       }
     } catch (error) {
-      console.error('Error fetching companies:', error);
+      // Silent error handling
     }
   };
 
