@@ -1,21 +1,28 @@
 import { useState, useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import { supabase } from '../lib/supabase';
 
-// Configure notification behavior
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+// Conditionally import expo-notifications only on mobile
+let Notifications: any = null;
+let Device: any = null;
+
+if (Platform.OS !== 'web') {
+  Notifications = require('expo-notifications');
+  Device = require('expo-device');
+  
+  // Configure notification behavior (only on mobile)
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
+}
 
 interface UseNotificationsReturn {
   expoPushToken: string | null;
-  notification: Notifications.Notification | null;
+  notification: any | null;
   isLoading: boolean;
   error: string | null;
   registerForPushNotifications: () => Promise<string | null>;
@@ -23,32 +30,34 @@ interface UseNotificationsReturn {
 
 export function useNotifications(userId: string | null): UseNotificationsReturn {
   const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
-  const [notification, setNotification] = useState<Notifications.Notification | null>(null);
+  const [notification, setNotification] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const notificationListener = useRef<Notifications.Subscription>();
-  const responseListener = useRef<Notifications.Subscription>();
+  const notificationListener = useRef<any>();
+  const responseListener = useRef<any>();
 
   useEffect(() => {
-    // Setup notification listeners
-    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-      console.log('📨 Notification received:', notification);
-      setNotification(notification);
-    });
+    // Setup notification listeners (only on mobile)
+    if (Platform.OS !== 'web' && Notifications) {
+      notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+        console.log('📨 Notification received:', notification);
+        setNotification(notification);
+      });
 
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('👆 Notification tapped:', response);
-      // Handle navigation here based on notification data
-    });
+      responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+        console.log('👆 Notification tapped:', response);
+        // Handle navigation here based on notification data
+      });
 
-    return () => {
-      if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
-      }
-      if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
-      }
-    };
+      return () => {
+        if (notificationListener.current) {
+          Notifications.removeNotificationSubscription(notificationListener.current);
+        }
+        if (responseListener.current) {
+          Notifications.removeNotificationSubscription(responseListener.current);
+        }
+      };
+    }
   }, []);
 
   const registerForPushNotifications = async (): Promise<string | null> => {
