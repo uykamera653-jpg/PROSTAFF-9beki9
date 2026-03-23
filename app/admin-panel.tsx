@@ -56,12 +56,20 @@ export default function AdminPanelScreen() {
 
   // Auth check effect - simplified
   useEffect(() => {
-    if (roleLoading) return;
+    console.log('🔍 Admin panel - checking auth:', { roleLoading, currentUserRole });
+    
+    if (roleLoading) {
+      console.log('⏳ Admin panel - waiting for role to load');
+      return;
+    }
 
     if (currentUserRole !== 'admin' && currentUserRole !== 'moderator') {
+      console.log('❌ Admin panel - not authorized, redirecting to home');
       router.replace('/');
       return;
     }
+    
+    console.log('✅ Admin panel - authorized:', currentUserRole);
   }, [currentUserRole, roleLoading, router]);
 
   // Data fetching and real-time subscription effect

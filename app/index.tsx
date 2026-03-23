@@ -61,32 +61,42 @@ export default function IndexScreen() {
   useEffect(() => {
     // Wait for both auth and role to finish loading
     if (isLoading || roleLoading) {
+      console.log('⏳ Waiting for loading to complete:', { isLoading, roleLoading });
       return;
     }
 
     // No user - stay on login page
     if (!user) {
+      console.log('⚠️ No user - staying on login page');
       return;
     }
 
+    console.log('✅ User logged in - role:', role);
+
     // User exists - redirect based on role
-    const redirectPath = (() => {
+    try {
       switch (role) {
-        case 'worker':
-          return '/worker-dashboard';
-        case 'company':
-          return '/company-dashboard';
         case 'admin':
         case 'moderator':
-          return '/admin-panel';
-        case 'customer':
+          console.log('🔐 Redirecting to admin panel');
+          router.replace('/admin-panel');
+          break;
+        case 'worker':
+          console.log('🔨 Redirecting to worker dashboard');
+          router.replace('/worker-dashboard');
+          break;
+        case 'company':
+          console.log('🏢 Redirecting to company dashboard');
+          router.replace('/company-dashboard');
+          break;
         default:
-          return '/(tabs)/home';
+          console.log('👤 Redirecting to customer home');
+          router.replace('/(tabs)/home');
+          break;
       }
-    })();
-    
-    // Use replace to prevent back navigation
-    router.replace(redirectPath as any);
+    } catch (error) {
+      console.error('❌ Navigation error:', error);
+    }
   }, [isLoading, user, roleLoading, role, router]);
 
   // Show loading screen while checking auth or role
