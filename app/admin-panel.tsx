@@ -151,40 +151,67 @@ export default function AdminPanelScreen() {
 
   const fetchUsers = async () => {
     try {
+      console.log('📥 Fetching users...');
       setIsLoading(true);
       
       // Call Edge Function instead of direct database query
       const { data: session } = await supabase.auth.getSession();
       if (!session?.session) {
         console.error('❌ No session');
+        showAlert('Xatolik', 'Session yo\'q. Qayta login qiling.');
         setUsers([]);
         return;
       }
 
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.session.access_token}`,
-        },
-        body: JSON.stringify({ operation: 'get_users' }),
-      });
+      console.log('🔑 Session found, calling Edge Function...');
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Failed to fetch users:', errorText);
-        showAlert('Xatolik', `Foydalanuvchilarni yuklashda xatolik: ${errorText}`);
-        setUsers([]);
-        return;
-      }
+      // Add timeout for fetch request (15 seconds)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-      const result = await response.json();
-      if (result.users) {
-        setUsers(result.users);
+      try {
+        const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.session.access_token}`,
+          },
+          body: JSON.stringify({ operation: 'get_users' }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        console.log('📡 Response status:', response.status);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Failed to fetch users:', errorText);
+          showAlert('Xatolik', `Foydalanuvchilarni yuklashda xatolik: ${errorText}`);
+          setUsers([]);
+          return;
+        }
+
+        const result = await response.json();
+        console.log('✅ Users loaded:', result.users?.length || 0);
+        if (result.users) {
+          setUsers(result.users);
+        } else {
+          console.warn('⚠️ No users in response');
+          setUsers([]);
+        }
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          console.error('⏱️ Fetch timeout');
+          showAlert('Xatolik', 'So\'rov vaqti tugadi (15s). Iltimos qayta urinib ko\'ring.');
+        } else {
+          throw fetchError;
+        }
       }
     } catch (error: any) {
       console.error('❌ Fetch users error:', error);
-      showAlert('Xatolik', 'Foydalanuvchilarni yuklashda xatolik');
+      showAlert('Xatolik', `Xatolik: ${error.message || 'Noma\'lum xatolik'}`);
       setUsers([]);
     } finally {
       setIsLoading(false);
@@ -273,65 +300,107 @@ export default function AdminPanelScreen() {
 
   const fetchWorkers = async () => {
     try {
+      console.log('📥 Fetching workers...');
       const { data: session } = await supabase.auth.getSession();
       if (!session?.session) {
         console.error('❌ No session');
+        showAlert('Xatolik', 'Session yo\'q');
         return;
       }
 
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.session.access_token}`,
-        },
-        body: JSON.stringify({ operation: 'get_workers' }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Failed to fetch workers:', errorText);
-        return;
-      }
+      try {
+        const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.session.access_token}`,
+          },
+          body: JSON.stringify({ operation: 'get_workers' }),
+          signal: controller.signal,
+        });
 
-      const result = await response.json();
-      if (result.workers) {
-        setWorkers(result.workers);
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Failed to fetch workers:', errorText);
+          showAlert('Xatolik', `Ishchilarni yuklashda xatolik: ${errorText}`);
+          return;
+        }
+
+        const result = await response.json();
+        console.log('✅ Workers loaded:', result.workers?.length || 0);
+        if (result.workers) {
+          setWorkers(result.workers);
+        }
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          console.error('⏱️ Workers fetch timeout');
+          showAlert('Xatolik', 'So\'rov vaqti tugadi');
+        } else {
+          throw fetchError;
+        }
       }
     } catch (error: any) {
       console.error('❌ Fetch workers error:', error);
+      showAlert('Xatolik', `Xatolik: ${error.message}`);
     }
   };
 
   const fetchCompanies = async () => {
     try {
+      console.log('📥 Fetching companies...');
       const { data: session } = await supabase.auth.getSession();
       if (!session?.session) {
         console.error('❌ No session');
+        showAlert('Xatolik', 'Session yo\'q');
         return;
       }
 
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.session.access_token}`,
-        },
-        body: JSON.stringify({ operation: 'get_companies' }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Failed to fetch companies:', errorText);
-        return;
-      }
+      try {
+        const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.session.access_token}`,
+          },
+          body: JSON.stringify({ operation: 'get_companies' }),
+          signal: controller.signal,
+        });
 
-      const result = await response.json();
-      if (result.companies) {
-        setCompanies(result.companies);
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Failed to fetch companies:', errorText);
+          showAlert('Xatolik', `Firmalarni yuklashda xatolik: ${errorText}`);
+          return;
+        }
+
+        const result = await response.json();
+        console.log('✅ Companies loaded:', result.companies?.length || 0);
+        if (result.companies) {
+          setCompanies(result.companies);
+        }
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          console.error('⏱️ Companies fetch timeout');
+          showAlert('Xatolik', 'So\'rov vaqti tugadi');
+        } else {
+          throw fetchError;
+        }
       }
     } catch (error: any) {
       console.error('❌ Fetch companies error:', error);
+      showAlert('Xatolik', `Xatolik: ${error.message}`);
     }
   };
 
