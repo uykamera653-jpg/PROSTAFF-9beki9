@@ -56,6 +56,8 @@ export default function AdminPanelScreen() {
 
   // Auth check effect
   useEffect(() => {
+    console.log('🔍 Admin panel useEffect triggered:', { roleLoading, currentUserRole });
+    
     if (roleLoading) {
       console.log('⏳ Admin panel - Role loading...');
       return;
@@ -71,7 +73,7 @@ export default function AdminPanelScreen() {
     }
 
     console.log('✅ Admin access granted');
-  }, [currentUserRole, roleLoading]);
+  }, [currentUserRole, roleLoading, router]);
 
   // Data fetching and real-time subscription effect
   useEffect(() => {
@@ -316,6 +318,7 @@ export default function AdminPanelScreen() {
   );
 
   if (roleLoading) {
+    console.log('📺 Rendering loading screen - roleLoading:', roleLoading);
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={[styles.header, { paddingTop: insets.top + spacing.md, backgroundColor: theme.surface }]}>
@@ -332,6 +335,8 @@ export default function AdminPanelScreen() {
       </View>
     );
   }
+
+  console.log('📺 Rendering admin panel main content');
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>

@@ -95,9 +95,10 @@ export default function IndexScreen() {
     // Use replace to prevent back navigation
     try {
       router.replace(redirectPath as any);
-      console.log('✅ Navigation initiated successfully');
+      console.log('✅ Navigation initiated successfully to:', redirectPath);
     } catch (error) {
       console.error('❌ Navigation failed:', error);
+      console.error('Error details:', error);
     }
   }, [isLoading, user, roleLoading, role, router]);
 
