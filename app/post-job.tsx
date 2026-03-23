@@ -49,6 +49,7 @@ export default function PostJobScreen() {
   const [photoUri, setPhotoUri] = useState<string>();
   const [showSummary, setShowSummary] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
 
   const handlePickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -62,8 +63,6 @@ export default function PostJobScreen() {
       setPhotoUri(result.assets[0].uri);
     }
   };
-
-
 
   const handlePostAd = () => {
     if (!description.trim()) {
@@ -317,26 +316,48 @@ export default function PostJobScreen() {
 
           <Card>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.address}</Text>
-            <LocationPicker
-              onLocationSelect={(loc) => {
-                setLocation(loc.address);
-                setLatitude(loc.latitude);
-                setLongitude(loc.longitude);
-              }}
-            />
-            {location && latitude && longitude && (
-              <View style={styles.locationInfo}>
-                <Ionicons name="checkmark-circle" size={20} color={theme.success} />
-                <Text style={[styles.locationText, { color: theme.textSecondary }]} numberOfLines={1}>
-                  {location}
-                </Text>
-              </View>
-            )}
+            <TouchableOpacity
+              style={[styles.locationButton, { backgroundColor: theme.surfaceVariant, borderColor: theme.border }]}
+              onPress={() => setShowLocationPicker(true)}
+            >
+              {location && latitude && longitude ? (
+                <View style={styles.selectedLocation}>
+                  <Ionicons name="location" size={24} color={theme.success} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.selectedLocationText, { color: theme.text }]} numberOfLines={2}>
+                      {location}
+                    </Text>
+                    <Text style={[styles.coordinates, { color: theme.textTertiary }]}>
+                      {latitude.toFixed(6)}, {longitude.toFixed(6)}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <Ionicons name="location-outline" size={32} color={theme.textTertiary} />
+                  <Text style={[styles.locationPlaceholder, { color: theme.textSecondary }]}>
+                    {t.selectLocation || 'Manzilni tanlang'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
           </Card>
 
           <Button title={t.postAd} onPress={handlePostAd} style={styles.submitButton} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Location Picker Modal */}
+      <LocationPicker
+        visible={showLocationPicker}
+        onClose={() => setShowLocationPicker(false)}
+        onLocationSelect={(coords, address) => {
+          setLocation(address);
+          setLatitude(coords.latitude);
+          setLongitude(coords.longitude);
+        }}
+        initialLocation={latitude && longitude ? { latitude, longitude } : undefined}
+      />
 
       {/* Summary Modal */}
       <Modal visible={showSummary} transparent animationType="fade" onRequestClose={() => setShowSummary(false)}>
@@ -390,7 +411,6 @@ export default function PostJobScreen() {
                   isSubmitting && { opacity: 0.5 },
                 ]}
                 onPress={() => {
-                  console.log('❌ Cancel button pressed');
                   setShowSummary(false);
                 }}
                 disabled={isSubmitting}
@@ -406,10 +426,7 @@ export default function PostJobScreen() {
                   { backgroundColor: theme.primary },
                   isSubmitting && { opacity: 0.7 },
                 ]}
-                onPress={() => {
-                  console.log('✅ Confirm button pressed - calling handleConfirmAd');
-                  handleConfirmAd();
-                }}
+                onPress={handleConfirmAd}
                 disabled={isSubmitting}
                 activeOpacity={0.7}
               >
@@ -423,8 +440,6 @@ export default function PostJobScreen() {
           </View>
         </View>
       </Modal>
-
-
     </View>
   );
 }
@@ -499,6 +514,33 @@ const styles = StyleSheet.create({
   submitButton: {
     marginTop: spacing.md,
   },
+  locationButton: {
+    borderRadius: borderRadius.md,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    padding: spacing.md,
+    minHeight: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  selectedLocation: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    width: '100%',
+  },
+  selectedLocationText: {
+    ...typography.body,
+    marginBottom: spacing.xs,
+  },
+  locationPlaceholder: {
+    ...typography.bodyMedium,
+  },
+  coordinates: {
+    ...typography.caption,
+    fontFamily: Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' }),
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -554,18 +596,5 @@ const styles = StyleSheet.create({
   modalButtonText: {
     ...typography.bodyMedium,
     fontWeight: '600',
-  },
-  locationInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  locationText: {
-    ...typography.body,
-    flex: 1,
   },
 });

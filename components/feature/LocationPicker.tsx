@@ -59,6 +59,31 @@ interface LocationPickerProps {
   initialLocation?: { latitude: number; longitude: number };
 }
 
+export function LocationPickerButton(props: Omit<LocationPickerProps, 'visible' | 'onClose'>) {
+  const [visible, setVisible] = React.useState(false);
+  const { theme } = useTheme();
+  const { t } = useTranslation();
+
+  return (
+    <>
+      <TouchableOpacity
+        style={[styles.pickerButton, { backgroundColor: theme.surfaceVariant, borderColor: theme.border }]}
+        onPress={() => setVisible(true)}
+      >
+        <Ionicons name="location-outline" size={24} color={theme.primary} />
+        <Text style={[styles.pickerButtonText, { color: theme.text }]}>
+          {t.selectLocation || 'Manzilni tanlang'}
+        </Text>
+      </TouchableOpacity>
+      <LocationPicker
+        {...props}
+        visible={visible}
+        onClose={() => setVisible(false)}
+      />
+    </>
+  );
+}
+
 export function LocationPicker({ visible, onClose, onLocationSelect, initialLocation }: LocationPickerProps) {
   const { theme } = useTheme();
   const { t } = useTranslation();
@@ -446,5 +471,17 @@ const styles = StyleSheet.create({
     borderRightColor: 'transparent',
     borderTopColor: '#FF4444',
     marginTop: -2,
+  },
+  pickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+  },
+  pickerButtonText: {
+    ...typography.bodyMedium,
+    flex: 1,
   },
 });
