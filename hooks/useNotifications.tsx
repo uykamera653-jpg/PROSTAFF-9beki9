@@ -16,8 +16,24 @@ if (Platform.OS !== 'web') {
       shouldShowAlert: true,
       shouldPlaySound: true,
       shouldSetBadge: true,
+      priority: Notifications.AndroidNotificationPriority.MAX,
     }),
   });
+  
+  // Create Android notification channel with sound and vibration
+  if (Platform.OS === 'android') {
+    Notifications.setNotificationChannelAsync('new-orders', {
+      name: 'Yangi buyurtmalar',
+      description: 'Yangi buyurtmalar haqida bildirishnomalar',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      sound: 'default',
+      enableLights: true,
+      lightColor: '#FF6B35',
+      enableVibrate: true,
+      showBadge: true,
+    });
+  }
 }
 
 interface UseNotificationsReturn {
@@ -39,9 +55,18 @@ export function useNotifications(userId: string | null): UseNotificationsReturn 
   useEffect(() => {
     // Setup notification listeners (only on mobile)
     if (Platform.OS !== 'web' && Notifications) {
-      notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+      notificationListener.current = Notifications.addNotificationReceivedListener(async (notification) => {
         console.log('📨 Notification received:', notification);
         setNotification(notification);
+        
+        // Play sound and vibrate on notification receive
+        if (Platform.OS === 'android') {
+          // Android will automatically use channel settings
+          console.log('🔔 Android notification with channel sound');
+        } else {
+          // iOS will use sound from notification payload
+          console.log('🔔 iOS notification with sound');
+        }
       });
 
       responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {

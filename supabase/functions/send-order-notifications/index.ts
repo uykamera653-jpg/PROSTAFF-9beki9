@@ -123,7 +123,7 @@ serve(async (req) => {
     // Send push notifications via Expo Push API
     const messages = nearbyTokens.map(token => ({
       to: token.token,
-      sound: 'default', // ✅ OVOZ bilan notification
+      sound: 'default', // ✅ iOS and Android default sound
       title: `🔔 Yangi buyurtma: ${payload.category}`,
       body: `📍 ${payload.location}\n${payload.description.substring(0, 100)}`,
       data: {
@@ -132,9 +132,24 @@ serve(async (req) => {
         screen: 'order-detail',
       },
       priority: 'high',
-      channelId: 'new-orders', // Android notification channel
+      channelId: 'new-orders', // ✅ Android notification channel (with sound settings)
       badge: 1, // iOS badge count
       ttl: 600, // 10 minutes expiry
+      
+      // Android-specific settings
+      android: {
+        sound: 'default',
+        priority: 'max',
+        vibrate: [0, 250, 250, 250],
+        channelId: 'new-orders',
+      },
+      
+      // iOS-specific settings
+      ios: {
+        sound: 'default',
+        badge: 1,
+        priority: 'high',
+      },
     }));
 
     // Send to Expo Push Notification service
