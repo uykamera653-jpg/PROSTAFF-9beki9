@@ -65,10 +65,13 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
   };
 
   const setupRealtimeSubscription = () => {
-    console.log('📡 Setting up app_config real-time subscription');
+    // Cleanup previous channel if exists
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
     
     channelRef.current = supabase
-      .channel('app_config_changes')
+      .channel(`app_config_changes_${Date.now()}`)
       .on(
         'postgres_changes',
         {
@@ -77,14 +80,11 @@ export function AppConfigProvider({ children }: { children: ReactNode }) {
           table: 'app_config',
         },
         (payload) => {
-          console.log('📨 App config changed:', payload);
           // Reload all configs when any change occurs
           loadConfigs();
         }
       )
-      .subscribe((status) => {
-        console.log('📡 App config subscription status:', status);
-      });
+      .subscribe();
   };
 
   const getConfig = (key: string, defaultValue: any = null): any => {

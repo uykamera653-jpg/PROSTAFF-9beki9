@@ -54,25 +54,14 @@ export default function AdminPanelScreen() {
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [configValue, setConfigValue] = useState('');
 
-  // Auth check effect
+  // Auth check effect - simplified
   useEffect(() => {
-    console.log('🔍 Admin panel useEffect triggered:', { roleLoading, currentUserRole });
-    
-    if (roleLoading) {
-      console.log('⏳ Admin panel - Role loading...');
-      return;
-    }
-
-    console.log('🔍 Admin panel - Current role:', currentUserRole);
+    if (roleLoading) return;
 
     if (currentUserRole !== 'admin' && currentUserRole !== 'moderator') {
-      console.log('⛔ Access denied - redirecting to home');
-      // Immediate redirect without alert to avoid white screen
       router.replace('/');
       return;
     }
-
-    console.log('✅ Admin access granted');
   }, [currentUserRole, roleLoading, router]);
 
   // Data fetching and real-time subscription effect
@@ -318,25 +307,12 @@ export default function AdminPanelScreen() {
   );
 
   if (roleLoading) {
-    console.log('📺 Rendering loading screen - roleLoading:', roleLoading);
     return (
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <View style={[styles.header, { paddingTop: insets.top + spacing.md, backgroundColor: theme.surface }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color={theme.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Admin Panel</Text>
-          <View style={{ width: 40 }} />
-        </View>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.primary} />
-          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Yuklanmoqda...</Text>
-        </View>
+      <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={theme.primary} />
       </View>
     );
   }
-
-  console.log('📺 Rendering admin panel main content');
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
