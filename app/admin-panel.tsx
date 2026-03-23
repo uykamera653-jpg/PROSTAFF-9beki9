@@ -154,61 +154,21 @@ export default function AdminPanelScreen() {
       console.log('📥 Fetching users...');
       setIsLoading(true);
       
-      // Call Edge Function instead of direct database query
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session) {
-        console.error('❌ No session');
-        showAlert('Xatolik', 'Session yo\'q. Qayta login qiling.');
+      // Direct database query - tezroq!
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('id, name, email, role, created_at')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Failed to fetch users:', error);
+        showAlert('Xatolik', `Foydalanuvchilarni yuklashda xatolik: ${error.message}`);
         setUsers([]);
         return;
       }
 
-      console.log('🔑 Session found, calling Edge Function...');
-
-      // Add timeout for fetch request (15 seconds)
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-      try {
-        const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.session.access_token}`,
-          },
-          body: JSON.stringify({ operation: 'get_users' }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        console.log('📡 Response status:', response.status);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ Failed to fetch users:', errorText);
-          showAlert('Xatolik', `Foydalanuvchilarni yuklashda xatolik: ${errorText}`);
-          setUsers([]);
-          return;
-        }
-
-        const result = await response.json();
-        console.log('✅ Users loaded:', result.users?.length || 0);
-        if (result.users) {
-          setUsers(result.users);
-        } else {
-          console.warn('⚠️ No users in response');
-          setUsers([]);
-        }
-      } catch (fetchError: any) {
-        clearTimeout(timeoutId);
-        if (fetchError.name === 'AbortError') {
-          console.error('⏱️ Fetch timeout');
-          showAlert('Xatolik', 'So\'rov vaqti tugadi (15s). Iltimos qayta urinib ko\'ring.');
-        } else {
-          throw fetchError;
-        }
-      }
+      console.log('✅ Users loaded:', data?.length || 0);
+      setUsers(data || []);
     } catch (error: any) {
       console.error('❌ Fetch users error:', error);
       showAlert('Xatolik', `Xatolik: ${error.message || 'Noma\'lum xatolik'}`);
@@ -225,56 +185,34 @@ export default function AdminPanelScreen() {
       console.log('🔄 Updating role:', { userId: selectedUser.id, newRole });
       setIsUpdatingRole(true);
 
-      // Call Edge Function instead of direct database update
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session) {
-        console.error('❌ No session found');
-        showAlert('Xatolik', 'Session yo\'q. Qayta login qiling.');
+      // Direct database update - tezroq!
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({
+          role: newRole,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', selectedUser.id);
+
+      if (error) {
+        console.error('❌ Failed to update role:', error);
+        showAlert('Xatolik', `Rolni yangilashda xatolik: ${error.message}`);
         setIsUpdatingRole(false);
         return;
       }
 
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.session.access_token}`,
-        },
-        body: JSON.stringify({
-          operation: 'update_role',
-          user_id: selectedUser.id,
-          new_role: newRole,
-        }),
-      });
-
-      console.log('📡 Response status:', response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Failed to update role:', errorText);
-        showAlert('Xatolik', `Rolni yangilashda xatolik: ${errorText}`);
-        setIsUpdatingRole(false);
-        return;
-      }
-
-      const result = await response.json();
-      console.log('✅ Result:', result);
-
-      if (result.success) {
-        showAlert('Muvaffaqiyatli', result.message || `Rol ${newRole}ga o'zgartirildi`);
-        
-        // Force refresh to ensure latest data
-        await fetchUsers();
-        
-        // Close modal after successful update
-        setShowRoleModal(false);
-        setSelectedUser(null);
-      } else {
-        showAlert('Xatolik', result.error || 'Noma\'lum xatolik');
-      }
+      console.log('✅ Role updated successfully');
+      showAlert('Muvaffaqiyatli', `Rol ${newRole}ga o'zgartirildi`);
+      
+      // Force refresh to ensure latest data
+      await fetchUsers();
+      
+      // Close modal after successful update
+      setShowRoleModal(false);
+      setSelectedUser(null);
     } catch (error: any) {
       console.error('❌ Role change error:', error);
-      showAlert('Xatolik', `Rolni yangilashda xatolik: ${error.message || 'Network error'}`);
+      showAlert('Xatolik', `Rolni yangilashda xatolik: ${error.message}`);
     } finally {
       setIsUpdatingRole(false);
     }
@@ -301,50 +239,21 @@ export default function AdminPanelScreen() {
   const fetchWorkers = async () => {
     try {
       console.log('📥 Fetching workers...');
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session) {
-        console.error('❌ No session');
-        showAlert('Xatolik', 'Session yo\'q');
+      
+      // Direct database query - tezroq!
+      const { data, error } = await supabase
+        .from('workers')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Failed to fetch workers:', error);
+        showAlert('Xatolik', `Ishchilarni yuklashda xatolik: ${error.message}`);
         return;
       }
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-      try {
-        const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.session.access_token}`,
-          },
-          body: JSON.stringify({ operation: 'get_workers' }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ Failed to fetch workers:', errorText);
-          showAlert('Xatolik', `Ishchilarni yuklashda xatolik: ${errorText}`);
-          return;
-        }
-
-        const result = await response.json();
-        console.log('✅ Workers loaded:', result.workers?.length || 0);
-        if (result.workers) {
-          setWorkers(result.workers);
-        }
-      } catch (fetchError: any) {
-        clearTimeout(timeoutId);
-        if (fetchError.name === 'AbortError') {
-          console.error('⏱️ Workers fetch timeout');
-          showAlert('Xatolik', 'So\'rov vaqti tugadi');
-        } else {
-          throw fetchError;
-        }
-      }
+      console.log('✅ Workers loaded:', data?.length || 0);
+      setWorkers(data || []);
     } catch (error: any) {
       console.error('❌ Fetch workers error:', error);
       showAlert('Xatolik', `Xatolik: ${error.message}`);
@@ -354,50 +263,21 @@ export default function AdminPanelScreen() {
   const fetchCompanies = async () => {
     try {
       console.log('📥 Fetching companies...');
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session) {
-        console.error('❌ No session');
-        showAlert('Xatolik', 'Session yo\'q');
+      
+      // Direct database query - tezroq!
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Failed to fetch companies:', error);
+        showAlert('Xatolik', `Firmalarni yuklashda xatolik: ${error.message}`);
         return;
       }
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-      try {
-        const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.session.access_token}`,
-          },
-          body: JSON.stringify({ operation: 'get_companies' }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ Failed to fetch companies:', errorText);
-          showAlert('Xatolik', `Firmalarni yuklashda xatolik: ${errorText}`);
-          return;
-        }
-
-        const result = await response.json();
-        console.log('✅ Companies loaded:', result.companies?.length || 0);
-        if (result.companies) {
-          setCompanies(result.companies);
-        }
-      } catch (fetchError: any) {
-        clearTimeout(timeoutId);
-        if (fetchError.name === 'AbortError') {
-          console.error('⏱️ Companies fetch timeout');
-          showAlert('Xatolik', 'So\'rov vaqti tugadi');
-        } else {
-          throw fetchError;
-        }
-      }
+      console.log('✅ Companies loaded:', data?.length || 0);
+      setCompanies(data || []);
     } catch (error: any) {
       console.error('❌ Fetch companies error:', error);
       showAlert('Xatolik', `Xatolik: ${error.message}`);
@@ -406,32 +286,21 @@ export default function AdminPanelScreen() {
 
   const toggleWorkerOnline = async (workerId: string, currentStatus: boolean) => {
     try {
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session) return;
-
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.session.access_token}`,
-        },
-        body: JSON.stringify({
-          operation: 'toggle_worker_online',
-          worker_id: workerId,
+      const { error } = await supabase
+        .from('workers')
+        .update({
           is_online: !currentStatus,
-        }),
-      });
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', workerId);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        showAlert('Xatolik', errorText);
+      if (error) {
+        console.error('❌ Toggle worker online error:', error);
+        showAlert('Xatolik', `Online holatini o'zgartirish xatoligi: ${error.message}`);
         return;
       }
 
-      const result = await response.json();
-      if (result.success) {
-        await fetchWorkers();
-      }
+      await fetchWorkers();
     } catch (error: any) {
       console.error('❌ Toggle worker online error:', error);
       showAlert('Xatolik', 'Online holatini o\'zgartirish xatoligi');
@@ -440,32 +309,21 @@ export default function AdminPanelScreen() {
 
   const toggleCompanyOnline = async (companyId: string, currentStatus: boolean) => {
     try {
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session) return;
-
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.session.access_token}`,
-        },
-        body: JSON.stringify({
-          operation: 'toggle_company_online',
-          company_id: companyId,
+      const { error } = await supabase
+        .from('companies')
+        .update({
           is_online: !currentStatus,
-        }),
-      });
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', companyId);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        showAlert('Xatolik', errorText);
+      if (error) {
+        console.error('❌ Toggle company online error:', error);
+        showAlert('Xatolik', `Online holatini o'zgartirish xatoligi: ${error.message}`);
         return;
       }
 
-      const result = await response.json();
-      if (result.success) {
-        await fetchCompanies();
-      }
+      await fetchCompanies();
     } catch (error: any) {
       console.error('❌ Toggle company online error:', error);
       showAlert('Xatolik', 'Online holatini o\'zgartirish xatoligi');
@@ -474,33 +332,22 @@ export default function AdminPanelScreen() {
 
   const toggleWorkerBlock = async (workerId: string, currentStatus: boolean) => {
     try {
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session) return;
-
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.session.access_token}`,
-        },
-        body: JSON.stringify({
-          operation: 'toggle_worker_block',
-          worker_id: workerId,
+      const { error } = await supabase
+        .from('workers')
+        .update({
           is_blocked: !currentStatus,
-        }),
-      });
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', workerId);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        showAlert('Xatolik', errorText);
+      if (error) {
+        console.error('❌ Toggle worker block error:', error);
+        showAlert('Xatolik', `Bloklash holatini o'zgartirish xatoligi: ${error.message}`);
         return;
       }
 
-      const result = await response.json();
-      if (result.success) {
-        showAlert('Muvaffaqiyatli', result.message);
-        await fetchWorkers();
-      }
+      showAlert('Muvaffaqiyatli', !currentStatus ? 'Ishchi bloklandi' : 'Ishchi blokdan chiqarildi');
+      await fetchWorkers();
     } catch (error: any) {
       console.error('❌ Toggle worker block error:', error);
       showAlert('Xatolik', 'Bloklash holatini o\'zgartirish xatoligi');
@@ -509,33 +356,22 @@ export default function AdminPanelScreen() {
 
   const toggleCompanyBlock = async (companyId: string, currentStatus: boolean) => {
     try {
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session) return;
-
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.session.access_token}`,
-        },
-        body: JSON.stringify({
-          operation: 'toggle_company_block',
-          company_id: companyId,
+      const { error } = await supabase
+        .from('companies')
+        .update({
           is_blocked: !currentStatus,
-        }),
-      });
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', companyId);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        showAlert('Xatolik', errorText);
+      if (error) {
+        console.error('❌ Toggle company block error:', error);
+        showAlert('Xatolik', `Bloklash holatini o'zgartirish xatoligi: ${error.message}`);
         return;
       }
 
-      const result = await response.json();
-      if (result.success) {
-        showAlert('Muvaffaqiyatli', result.message);
-        await fetchCompanies();
-      }
+      showAlert('Muvaffaqiyatli', !currentStatus ? 'Firma bloklandi' : 'Firma blokdan chiqarildi');
+      await fetchCompanies();
     } catch (error: any) {
       console.error('❌ Toggle company block error:', error);
       showAlert('Xatolik', 'Bloklash holatini o\'zgartirish xatoligi');
