@@ -23,9 +23,11 @@ import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../hooks/useAuth';
 import { useJobs } from '../hooks/useJobs';
 import { GenderSelector } from '../components/feature/GenderSelector';
+import { LocationPicker } from '../components/feature/LocationPicker';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { spacing, typography, borderRadius } from '../constants/theme';
+import { supabase } from '../lib/supabase';
 
 export default function PostJobScreen() {
   const router = useRouter();
@@ -42,6 +44,8 @@ export default function PostJobScreen() {
   const [description, setDescription] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('+998');
   const [location, setLocation] = useState('');
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
   const [photoUri, setPhotoUri] = useState<string>();
   const [showSummary, setShowSummary] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -74,37 +78,92 @@ export default function PostJobScreen() {
   };
 
   const handleConfirmAd = async () => {
+    if (!user) {
+      if (Platform.OS === 'web') {
+        alert('Iltimos avval tizimga kiring');
+      } else {
+        Alert.alert(t.appName, 'Iltimos avval tizimga kiring');
+      }
+      return;
+    }
+
+    if (!latitude || !longitude) {
+      if (Platform.OS === 'web') {
+        alert('Iltimos joylashuvni tanlang');
+      } else {
+        Alert.alert(t.appName, 'Iltimos joylashuvni tanlang');
+      }
+      return;
+    }
+
     setIsSubmitting(true);
     
     try {
-      let currentUser = user;
-      
-      // Ensure user is logged in
-      if (!currentUser) {
-        await login('demo@prostaff.uz');
-        // Get fresh user state - wait a bit for state to update
-        await new Promise(resolve => setTimeout(resolve, 300));
-        // Try to get user from AsyncStorage
-        const userJson = await AsyncStorage.getItem('user');
-        if (userJson) {
-          currentUser = JSON.parse(userJson);
+      // Upload image to Supabase Storage if exists
+      let imageUrl: string | null = null;
+      if (photoUri) {
+        try {
+          const fileName = `order_${user.id}_${Date.now()}.jpg`;
+          const formData = new FormData();
+          formData.append('file', {
+            uri: photoUri,
+            name: fileName,
+            type: 'image/jpeg',
+          } as any);
+
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('order-images')
+            .upload(fileName, formData);
+
+          if (uploadError) {
+            console.warn('Image upload failed:', uploadError);
+          } else {
+            const { data: urlData } = supabase.storage
+              .from('order-images')
+              .getPublicUrl(fileName);
+            imageUrl = urlData.publicUrl;
+          }
+        } catch (uploadErr) {
+          console.warn('Image upload error:', uploadErr);
         }
       }
 
-      if (!currentUser) {
-        throw new Error('User not found after login');
+      // Get category ID from categories table
+      const { data: categoryData, error: catError } = await supabase
+        .from('categories')
+        .select('id')
+        .ilike('name_uz', `%${category}%`)
+        .single();
+
+      if (catError) {
+        console.error('Category not found:', catError);
+        throw new Error('Kategoriya topilmadi');
       }
-      
-      // Add job to context
-      await addJob({
-        userId: currentUser.id,
-        category,
-        gender,
-        description: description.trim(),
-        phoneNumber: phoneNumber.trim() || '+998',
-        location: location.trim() || 'Manzil ko\'rsatilmagan',
-        photoUri,
-      });
+
+      // Create order in database
+      const { data: orderData, error: orderError } = await supabase
+        .from('orders')
+        .insert({
+          customer_id: user.id,
+          category_id: categoryData.id,
+          title: category,
+          description: description.trim(),
+          location: location.trim() || 'Manzil ko\'rsatilmagan',
+          latitude,
+          longitude,
+          images: imageUrl ? [imageUrl] : [],
+          customer_phone: phoneNumber.trim() || '+998',
+          status: 'pending',
+        })
+        .select()
+        .single();
+
+      if (orderError) {
+        console.error('Order creation error:', orderError);
+        throw orderError;
+      }
+
+      console.log('✅ Order created:', orderData);
       
       // Close modal
       setShowSummary(false);
@@ -114,15 +173,15 @@ export default function PostJobScreen() {
         pathname: '/worker-search',
         params: { 
           category,
-          jobAdId: Date.now().toString(),
+          orderId: orderData.id,
         },
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to post ad:', error);
       if (Platform.OS === 'web') {
-        alert('Xatolik yuz berdi. Qaytadan urinib ko\'ring.');
+        alert(`Xatolik: ${error.message || 'Qaytadan urinib ko\'ring'}`);
       } else {
-        Alert.alert(t.appName, 'Xatolik yuz berdi');
+        Alert.alert(t.appName, `Xatolik: ${error.message || 'Qaytadan urinib ko\'ring'}`);
       }
     } finally {
       setIsSubmitting(false);
@@ -205,14 +264,22 @@ export default function PostJobScreen() {
           </Card>
 
           <Card>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.address} ({t.optional})</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: theme.surfaceVariant, color: theme.text }]}
-              value={location}
-              onChangeText={setLocation}
-              placeholder={t.locationPlaceholder}
-              placeholderTextColor={theme.textTertiary}
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>{t.address}</Text>
+            <LocationPicker
+              onLocationSelect={(loc) => {
+                setLocation(loc.address);
+                setLatitude(loc.latitude);
+                setLongitude(loc.longitude);
+              }}
             />
+            {location && latitude && longitude && (
+              <View style={styles.locationInfo}>
+                <Ionicons name="checkmark-circle" size={20} color={theme.success} />
+                <Text style={[styles.locationText, { color: theme.textSecondary }]} numberOfLines={1}>
+                  {location}
+                </Text>
+              </View>
+            )}
           </Card>
 
           <Button title={t.postAd} onPress={handlePostAd} style={styles.submitButton} />
@@ -436,5 +503,17 @@ const styles = StyleSheet.create({
     ...typography.bodyMedium,
     fontWeight: '600',
   },
-
+  locationInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  locationText: {
+    ...typography.body,
+    flex: 1,
+  },
 });

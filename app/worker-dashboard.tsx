@@ -31,10 +31,19 @@ interface WorkerOrder {
   title: string;
   description: string;
   location: string;
-  customer_phone: string;
+  latitude?: number;
+  longitude?: number;
+  customer_phone?: string;
   status: OrderStatus;
   created_at: string;
   customer_id: string;
+  worker_id?: string;
+  distance?: number;
+}
+
+interface WorkerLocation {
+  latitude: number;
+  longitude: number;
 }
 
 interface WorkerProfile {
@@ -59,14 +68,46 @@ export default function WorkerDashboardScreen() {
   const [isOnline, setIsOnline] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [workerLocation, setWorkerLocation] = useState<WorkerLocation | null>(null);
   const { showAlert, AlertComponent } = useAlert();
 
-  // Check worker profile on mount
+  // Calculate distance between two coordinates (Haversine formula)
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  // Check worker profile and get location on mount
   useEffect(() => {
     if (user) {
       checkWorkerProfile();
+      getCurrentLocation();
     }
   }, [user]);
+
+  const getCurrentLocation = async () => {
+    try {
+      // For web/development, use default location (Tashkent)
+      // In production, use expo-location to get actual GPS
+      if (Platform.OS === 'web') {
+        setWorkerLocation({ latitude: 41.2995, longitude: 69.2401 });
+      } else {
+        // For mobile, you can add expo-location here
+        // For now, use default
+        setWorkerLocation({ latitude: 41.2995, longitude: 69.2401 });
+      }
+    } catch (error) {
+      console.error('Failed to get location:', error);
+      setWorkerLocation({ latitude: 41.2995, longitude: 69.2401 });
+    }
+  };
 
   useEffect(() => {
     if (workerProfile) {
@@ -159,7 +200,33 @@ export default function WorkerDashboardScreen() {
       }
       
       console.log('✅ Loaded orders:', data?.length || 0);
-      setOrders(data || []);
+      
+      // Calculate distance for pending orders if worker location available
+      let processedOrders = data || [];
+      if (selectedTab === 'pending' && workerLocation && data) {
+        processedOrders = data
+          .map(order => {
+            if (order.latitude && order.longitude) {
+              const distance = calculateDistance(
+                workerLocation.latitude,
+                workerLocation.longitude,
+                order.latitude,
+                order.longitude
+              );
+              return { ...order, distance };
+            }
+            return order;
+          })
+          .sort((a, b) => {
+            // Sort by distance (nearest first)
+            if (a.distance && b.distance) return a.distance - b.distance;
+            if (a.distance) return -1;
+            if (b.distance) return 1;
+            return 0;
+          });
+      }
+      
+      setOrders(processedOrders);
     } catch (error: any) {
       console.error('❌ Failed to load orders:', error);
       // Don't show alert on web to avoid disrupting UX
@@ -315,6 +382,15 @@ export default function WorkerDashboardScreen() {
         {item.description}
       </Text>
 
+      {item.distance && (
+        <View style={[styles.distanceBadge, { backgroundColor: theme.primary + '15' }]}>
+          <Ionicons name="navigate" size={14} color={theme.primary} />
+          <Text style={[styles.distanceText, { color: theme.primary }]}>
+            {item.distance.toFixed(1)} km yaqin
+          </Text>
+        </View>
+      )}
+
       <View style={styles.orderInfo}>
         <View style={styles.orderInfoItem}>
           <Ionicons name="location" size={16} color={theme.textSecondary} />
@@ -322,10 +398,11 @@ export default function WorkerDashboardScreen() {
             {item.location}
           </Text>
         </View>
-        {item.customer_phone && (
+        {/* Show customer phone only if order is accepted by this worker */}
+        {item.customer_phone && item.worker_id === user?.id && item.status !== 'pending' && (
           <View style={styles.orderInfoItem}>
-            <Ionicons name="call" size={16} color={theme.textSecondary} />
-            <Text style={[styles.orderInfoText, { color: theme.textSecondary }]}>
+            <Ionicons name="call" size={16} color={theme.success} />
+            <Text style={[styles.orderInfoText, { color: theme.success, fontWeight: '600' }]}>
               {item.customer_phone}
             </Text>
           </View>
@@ -671,5 +748,19 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     ...typography.body,
+  },
+  distanceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs / 2,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: borderRadius.sm,
+    marginBottom: spacing.sm,
+  },
+  distanceText: {
+    ...typography.small,
+    fontWeight: '600',
   },
 });
