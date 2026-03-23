@@ -164,6 +164,32 @@ export default function PostJobScreen() {
       }
 
       console.log('✅ Order created:', orderData);
+
+      // Send push notifications to nearby workers
+      try {
+        const { data: notifData, error: notifError } = await supabase.functions.invoke(
+          'send-order-notifications',
+          {
+            body: {
+              orderId: orderData.id,
+              category,
+              location: location.trim() || 'Manzil ko\'rsatilmagan',
+              latitude,
+              longitude,
+              description: description.trim(),
+            },
+          }
+        );
+
+        if (notifError) {
+          console.warn('❌ Failed to send notifications:', notifError);
+        } else {
+          console.log('✅ Notifications sent:', notifData);
+        }
+      } catch (notifErr) {
+        console.warn('❌ Notification error:', notifErr);
+        // Don't fail the order creation if notifications fail
+      }
       
       // Close modal
       setShowSummary(false);

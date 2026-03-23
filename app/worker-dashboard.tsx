@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../hooks/useAuth';
+import { useNotifications } from '../hooks/useNotifications';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useAlert } from '../components/ui/WebAlert';
@@ -70,6 +71,9 @@ export default function WorkerDashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [workerLocation, setWorkerLocation] = useState<WorkerLocation | null>(null);
   const { showAlert, AlertComponent } = useAlert();
+  
+  // Push notifications
+  const { expoPushToken, isLoading: notifLoading, error: notifError } = useNotifications(user?.id || null);
 
   // Calculate distance between two coordinates (Haversine formula)
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
