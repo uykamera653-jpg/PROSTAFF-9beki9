@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   Modal,
   ActivityIndicator,
+  TextInput,
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +22,7 @@ import { useAlert } from '../components/ui/WebAlert';
 import { spacing, typography, borderRadius } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { useAppConfig, AppConfig } from '../hooks/useAppConfig';
 
 interface UserProfile {
   id: string;
@@ -43,6 +46,13 @@ export default function AdminPanelScreen() {
   const { showAlert, AlertComponent } = useAlert();
   const channelRef = useRef<RealtimeChannel | null>(null);
   const hasCheckedAuth = useRef(false);
+
+  // Config management states
+  const [activeTab, setActiveTab] = useState<'users' | 'config'>('users');
+  const { configs, refreshConfigs } = useAppConfig();
+  const [selectedConfig, setSelectedConfig] = useState<AppConfig | null>(null);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [configValue, setConfigValue] = useState('');
 
   // Auth check effect
   useEffect(() => {
@@ -203,6 +213,74 @@ export default function AdminPanelScreen() {
     }
   };
 
+  const handleEditConfig = (config: AppConfig) => {
+    setSelectedConfig(config);
+    setConfigValue(JSON.stringify(config.value, null, 2));
+    setShowConfigModal(true);
+  };
+
+  const handleSaveConfig = async () => {
+    if (!selectedConfig) return;
+
+    try {
+      // Parse JSON value
+      let parsedValue;
+      try {
+        parsedValue = JSON.parse(configValue);
+      } catch (e) {
+        showAlert('Xatolik', 'Noto\'g\'ri JSON format');
+        return;
+      }
+
+      const { error } = await supabase
+        .from('app_config')
+        .update({
+          value: parsedValue,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', selectedConfig.id);
+
+      if (error) throw error;
+
+      showAlert('Muvaffaqiyatli', 'Konfiguratsiya yangilandi');
+      setShowConfigModal(false);
+      setSelectedConfig(null);
+      await refreshConfigs();
+    } catch (error: any) {
+      console.error('❌ Failed to update config:', error);
+      showAlert('Xatolik', 'Konfiguratsiyani yangilashda xatolik');
+    }
+  };
+
+  const renderConfig = ({ item }: { item: AppConfig }) => (
+    <Card style={styles.configCard}>
+      <View style={styles.configHeader}>
+        <View style={styles.configInfo}>
+          <Text style={[styles.configKey, { color: theme.text }]}>{item.key}</Text>
+          <Text style={[styles.configDescription, { color: theme.textSecondary }]}>
+            {item.description || 'No description'}
+          </Text>
+        </View>
+        <View style={[styles.categoryBadge, { backgroundColor: theme.primary + '20' }]}>
+          <Text style={[styles.categoryText, { color: theme.primary }]}>
+            {item.category}
+          </Text>
+        </View>
+      </View>
+      <View style={[styles.configValueContainer, { backgroundColor: theme.surfaceVariant }]}>
+        <Text style={[styles.configValue, { color: theme.textSecondary }]} numberOfLines={3}>
+          {JSON.stringify(item.value, null, 2)}
+        </Text>
+      </View>
+      <Button
+        title="Tahrirlash"
+        onPress={() => handleEditConfig(item)}
+        variant="outline"
+        style={styles.editConfigButton}
+      />
+    </Card>
+  );
+
   const renderUser = ({ item }: { item: UserProfile }) => (
     <Card style={styles.userCard}>
       <View style={styles.userInfo}>
@@ -262,12 +340,50 @@ export default function AdminPanelScreen() {
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Admin Panel</Text>
-        <TouchableOpacity onPress={fetchUsers}>
+        <TouchableOpacity onPress={activeTab === 'users' ? fetchUsers : refreshConfigs}>
           <Ionicons name="refresh" size={24} color={theme.primary} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.statsContainer}>
+      <View style={styles.mainTabsContainer}>
+        <TouchableOpacity
+          style={[
+            styles.mainTab,
+            activeTab === 'users' && { backgroundColor: theme.primary, borderColor: theme.primary },
+          ]}
+          onPress={() => setActiveTab('users')}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="people"
+            size={20}
+            color={activeTab === 'users' ? '#FFFFFF' : theme.primary}
+          />
+          <Text style={[styles.mainTabText, { color: activeTab === 'users' ? '#FFFFFF' : theme.primary }]}>
+            Foydalanuvchilar
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.mainTab,
+            activeTab === 'config' && { backgroundColor: theme.primary, borderColor: theme.primary },
+          ]}
+          onPress={() => setActiveTab('config')}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="settings"
+            size={20}
+            color={activeTab === 'config' ? '#FFFFFF' : theme.primary}
+          />
+          <Text style={[styles.mainTabText, { color: activeTab === 'config' ? '#FFFFFF' : theme.primary }]}>
+            Konfiguratsiya
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {activeTab === 'users' && (
+        <View style={styles.statsContainer}>
         <Card style={styles.statCard}>
           <Text style={[styles.statValue, { color: theme.primary }]}>{users.length}</Text>
           <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Total Users</Text>
@@ -290,13 +406,14 @@ export default function AdminPanelScreen() {
           </Text>
           <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Companies</Text>
         </Card>
-      </View>
+        </View>
+      )}
 
-      {isLoading ? (
+      {activeTab === 'users' && isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.primary} />
         </View>
-      ) : (
+      ) : activeTab === 'users' ? (
         <FlatList
           data={users}
           renderItem={renderUser}
@@ -308,6 +425,22 @@ export default function AdminPanelScreen() {
               <Ionicons name="people-outline" size={64} color={theme.textTertiary} />
               <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
                 No users found
+              </Text>
+            </View>
+          }
+        />
+      ) : (
+        <FlatList
+          data={configs}
+          renderItem={renderConfig}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.usersList}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="settings-outline" size={64} color={theme.textTertiary} />
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                Konfiguratsiya topilmadi
               </Text>
             </View>
           }
@@ -360,6 +493,62 @@ export default function AdminPanelScreen() {
               variant="outline" 
               style={styles.modalCancelButton} 
             />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Config Edit Modal */}
+      <Modal
+        visible={showConfigModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowConfigModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalOverlayTouch}
+            activeOpacity={1}
+            onPress={() => setShowConfigModal(false)}
+          />
+          <View style={[styles.configModalContent, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              {selectedConfig?.key}
+            </Text>
+            <Text style={[styles.configModalDescription, { color: theme.textSecondary }]}>
+              {selectedConfig?.description}
+            </Text>
+
+            <ScrollView style={styles.configInputContainer} nestedScrollEnabled>
+              <TextInput
+                value={configValue}
+                onChangeText={setConfigValue}
+                multiline
+                style={[
+                  styles.configInput,
+                  {
+                    color: theme.text,
+                    backgroundColor: theme.background,
+                    borderColor: theme.border,
+                  },
+                ]}
+                placeholder="JSON value"
+                placeholderTextColor={theme.textTertiary}
+              />
+            </ScrollView>
+
+            <View style={styles.configModalButtons}>
+              <Button
+                title="Bekor qilish"
+                onPress={() => setShowConfigModal(false)}
+                variant="outline"
+                style={styles.configModalButton}
+              />
+              <Button
+                title="Saqlash"
+                onPress={handleSaveConfig}
+                style={styles.configModalButton}
+              />
+            </View>
           </View>
         </View>
       </Modal>
@@ -527,5 +716,106 @@ const styles = StyleSheet.create({
   },
   modalCancelButton: {
     marginTop: spacing.lg,
+  },
+  mainTabsContainer: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  mainTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+    backgroundColor: 'transparent',
+    borderColor: '#E5E7EB',
+  },
+  mainTabText: {
+    ...typography.bodyMedium,
+    fontWeight: '600',
+  },
+  configCard: {
+    marginBottom: spacing.md,
+  },
+  configHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  configInfo: {
+    flex: 1,
+  },
+  configKey: {
+    ...typography.bodyMedium,
+    fontWeight: '600',
+    marginBottom: spacing.xs / 2,
+  },
+  configDescription: {
+    ...typography.small,
+  },
+  categoryBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: borderRadius.sm,
+  },
+  categoryText: {
+    ...typography.small,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  configValueContainer: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+    marginBottom: spacing.md,
+  },
+  configValue: {
+    ...typography.small,
+    fontFamily: 'monospace',
+  },
+  editConfigButton: {
+    marginTop: spacing.xs,
+  },
+  configModalContent: {
+    width: '90%',
+    maxWidth: 500,
+    maxHeight: '80%',
+    padding: spacing.xl,
+    borderRadius: borderRadius.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  configModalDescription: {
+    ...typography.small,
+    marginBottom: spacing.lg,
+  },
+  configInputContainer: {
+    maxHeight: 300,
+    marginBottom: spacing.lg,
+  },
+  configInput: {
+    ...typography.body,
+    fontFamily: 'monospace',
+    minHeight: 200,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderRadius: borderRadius.sm,
+    textAlignVertical: 'top',
+  },
+  configModalButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  configModalButton: {
+    flex: 1,
   },
 });
