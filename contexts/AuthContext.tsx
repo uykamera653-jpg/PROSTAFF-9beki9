@@ -64,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return {
               ...prevUser,
               name: updatedProfile.name || prevUser.name,
+              role: updatedProfile.role || prevUser.role,
             };
           });
         }
@@ -107,10 +108,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error('Failed to create profile:', createError);
           setUser({ id: userId, email, name: email.split('@')[0] });
         } else if (newProfile) {
-          setUser({ id: newProfile.id, email: newProfile.email, name: newProfile.name });
+          setUser({ id: newProfile.id, email: newProfile.email, name: newProfile.name, role: newProfile.role });
         }
       } else if (data) {
-        setUser({ id: data.id, email: data.email, name: data.name });
+        setUser({ id: data.id, email: data.email, name: data.name, role: data.role });
       }
     } catch (error) {
       console.error('Error loading user profile:', error);

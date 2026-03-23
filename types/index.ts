@@ -5,6 +5,7 @@ export interface User {
   name: string;
   email: string;
   photoUrl?: string;
+  role?: 'customer' | 'worker' | 'company' | 'admin' | 'moderator';
 }
 
 export interface JobAd {
