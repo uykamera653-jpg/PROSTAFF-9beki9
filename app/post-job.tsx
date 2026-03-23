@@ -163,7 +163,9 @@ export default function PostJobScreen() {
         throw new Error('Kategoriya topilmadi');
       }
 
-      // Create order in database
+      // Create order in database with 10-minute expiration
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .insert({
@@ -177,6 +179,7 @@ export default function PostJobScreen() {
           images: imageUrl ? [imageUrl] : [],
           customer_phone: phoneNumber.trim() || '+998',
           status: 'pending',
+          expires_at: expiresAt,
         })
         .select()
         .single();

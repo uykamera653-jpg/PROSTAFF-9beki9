@@ -22,6 +22,7 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { spacing, typography } from '../constants/theme';
 import { Worker } from '../types';
+import { supabase } from '../lib/supabase';
 
 export default function WorkerSearchScreen() {
   const router = useRouter();
@@ -33,85 +34,131 @@ export default function WorkerSearchScreen() {
   const { getWorkersByCategory, hireWorkers } = useWorkers();
 
   const category = params.category as string;
-  const jobAdId = params.jobAdId as string;
+  const orderId = params.orderId as string;
 
   const [isSearching, setIsSearching] = useState(true);
   const [workers, setWorkers] = useState<Worker[]>([]);
-  const [selectedWorkerIds, setSelectedWorkerIds] = useState<Set<string>>(new Set());
-  const [showConfirmation, setShowConfirmation] = useState(false);
-  const [isHiring, setIsHiring] = useState(false);
+  const [orderStatus, setOrderStatus] = useState<string>('pending');
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<number>(600); // 10 minutes in seconds
+  const [showExpiredModal, setShowExpiredModal] = useState(false);
 
+  // Subscribe to order status changes
   useEffect(() => {
-    // Simulate search delay
-    const searchTimeout = setTimeout(() => {
-      const foundWorkers = getWorkersByCategory(category);
-      setWorkers(foundWorkers);
-      setIsSearching(false);
-    }, 2000);
-
-    return () => clearTimeout(searchTimeout);
-  }, [category]);
-
-  const handleSelectWorker = (workerId: string) => {
-    setSelectedWorkerIds((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(workerId)) {
-        newSet.delete(workerId);
-      } else {
-        newSet.add(workerId);
-      }
-      return newSet;
-    });
-  };
-
-  const handleConfirmSelection = () => {
-    if (selectedWorkerIds.size === 0) {
-      if (Platform.OS === 'web') {
-        alert('Kamida bitta ishchini tanlang');
-      } else {
-        Alert.alert(t.appName, 'Kamida bitta ishchini tanlang');
-      }
+    if (!orderId) {
+      console.warn('⚠️ No orderId provided');
       return;
     }
-    setShowConfirmation(true);
-  };
 
-  const handleConfirmHiring = async () => {
-    if (!user) return;
+    console.log('🔍 Monitoring order:', orderId);
 
-    setIsHiring(true);
-    try {
-      const selectedWorkers = workers.filter((w) => selectedWorkerIds.has(w.id));
-      const hiredWorkersData = selectedWorkers.map((worker) => ({
-        userId: user.id,
-        jobAdId,
-        workerId: worker.id,
-        workerName: worker.name,
-        workerPhone: worker.phoneNumber,
-        arrivalTime: worker.arrivalTime,
-        dailyRate: worker.dailyRate,
-      }));
+    // Initial order fetch
+    const fetchOrder = async () => {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('status, expires_at, worker_id')
+        .eq('id', orderId)
+        .single();
 
-      await hireWorkers(hiredWorkersData);
-
-      setShowConfirmation(false);
-
-      if (Platform.OS === 'web') {
-        alert('Ishchilar muvaffaqiyatli yollandi!');
-      } else {
-        Alert.alert(t.appName, 'Ishchilar muvaffaqiyatli yollandi!');
+      if (error) {
+        console.error('❌ Failed to fetch order:', error);
+        return;
       }
 
-      router.push('/(tabs)/my-ads');
-    } catch (error) {
-      console.error('Failed to hire workers:', error);
-    } finally {
-      setIsHiring(false);
-    }
+      console.log('📦 Order data:', data);
+      setOrderStatus(data.status);
+      setExpiresAt(data.expires_at);
+
+      // If already accepted, stop searching
+      if (data.status === 'accepted' && data.worker_id) {
+        setIsSearching(false);
+      }
+    };
+
+    fetchOrder();
+
+    // Real-time subscription
+    const subscription = supabase
+      .channel(`order:${orderId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'orders',
+          filter: `id=eq.${orderId}`,
+        },
+        (payload) => {
+          console.log('🔔 Order updated:', payload.new);
+          const newStatus = (payload.new as any).status;
+          const newWorkerId = (payload.new as any).worker_id;
+
+          setOrderStatus(newStatus);
+
+          if (newStatus === 'accepted' && newWorkerId) {
+            setIsSearching(false);
+            
+            if (Platform.OS === 'web') {
+              alert('✅ Ishchi topildi! Ma\'lumotlarni ko\'ring.');
+            } else {
+              Alert.alert(t.appName, '✅ Ishchi topildi! Ma\'lumotlarni ko\'ring.');
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [orderId]);
+
+  // Timer countdown
+  useEffect(() => {
+    if (!expiresAt || orderStatus !== 'pending') return;
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const expiry = new Date(expiresAt).getTime();
+      const remaining = Math.max(0, Math.floor((expiry - now) / 1000));
+
+      setTimeRemaining(remaining);
+
+      if (remaining === 0) {
+        // Time expired
+        setIsSearching(false);
+        setShowExpiredModal(true);
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [expiresAt, orderStatus]);
+
+  // Initial worker search simulation
+  useEffect(() => {
+    const searchTimeout = setTimeout(() => {
+      setIsSearching(false);
+    }, 3000);
+
+    return () => clearTimeout(searchTimeout);
+  }, []);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const selectedWorkers = workers.filter((w) => selectedWorkerIds.has(w.id));
-  const totalCost = selectedWorkers.reduce((sum, w) => sum + w.dailyRate, 0);
+  const handleTryAgain = () => {
+    setShowExpiredModal(false);
+    router.back();
+  };
+
+  const handleGoHome = () => {
+    setShowExpiredModal(false);
+    router.push('/(tabs)/home');
+  };
 
   if (isSearching) {
     return (
@@ -139,6 +186,17 @@ export default function WorkerSearchScreen() {
           <Text style={[styles.searchingSubtext, { color: theme.textSecondary }]}>
             {t.availableWorkers}
           </Text>
+          
+          {/* Timer */}
+          <View style={[styles.timerContainer, { backgroundColor: theme.surfaceVariant }]}>
+            <Ionicons name="time-outline" size={20} color={theme.primary} />
+            <Text style={[styles.timerText, { color: theme.text }]}>
+              {formatTime(timeRemaining)}
+            </Text>
+          </View>
+          <Text style={[styles.timerHint, { color: theme.textTertiary }]}>
+            Qolgan vaqt
+          </Text>
         </View>
       </View>
     );
@@ -156,111 +214,75 @@ export default function WorkerSearchScreen() {
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>
-          {t.availableWorkers}
+          {orderStatus === 'pending' ? 'Ishchi kutilmoqda...' : 'Buyurtma holati'}
         </Text>
         <View style={styles.placeholder} />
       </View>
 
-      {workers.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="person-outline" size={64} color={theme.textTertiary} />
-          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-            {t.noWorkersFound}
-          </Text>
-        </View>
-      ) : (
-        <>
-          <FlatList
-            data={workers}
-            renderItem={({ item }) => (
-              <WorkerCard
-                worker={item}
-                isSelected={selectedWorkerIds.has(item.id)}
-                onSelect={() => handleSelectWorker(item.id)}
-              />
-            )}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.list}
-            showsVerticalScrollIndicator={false}
-          />
-
-          {selectedWorkerIds.size > 0 && (
-            <View style={[styles.footer, { backgroundColor: theme.surface }]}>
-              <View style={styles.footerInfo}>
-                <Text style={[styles.footerLabel, { color: theme.textSecondary }]}>
-                  {t.selectedWorkers}: {selectedWorkerIds.size}
-                </Text>
-                <Text style={[styles.footerTotal, { color: theme.primary }]}>
-                  {totalCost.toLocaleString()} {t.som}
-                </Text>
-              </View>
-              <Button
-                title={t.confirmHiring}
-                onPress={handleConfirmSelection}
-                style={styles.confirmButton}
-              />
+      <View style={styles.waitingContainer}>
+        {orderStatus === 'pending' ? (
+          <>
+            <ActivityIndicator size="large" color={theme.primary} style={{ marginBottom: spacing.lg }} />
+            <Ionicons name="hourglass-outline" size={64} color={theme.textTertiary} />
+            <Text style={[styles.waitingTitle, { color: theme.text }]}>
+              Ishchilar qidirilmoqda...
+            </Text>
+            <Text style={[styles.waitingSubtitle, { color: theme.textSecondary }]}>
+              Eng yaqin online ishchilarga xabar yuborildi
+            </Text>
+            
+            <View style={[styles.timerContainer, { backgroundColor: theme.surfaceVariant }]}>
+              <Ionicons name="time-outline" size={24} color={theme.primary} />
+              <Text style={[styles.timerText, { color: theme.text }]}>
+                {formatTime(timeRemaining)}
+              </Text>
             </View>
-          )}
-        </>
-      )}
+            <Text style={[styles.timerHint, { color: theme.textTertiary }]}>
+              Qolgan vaqt
+            </Text>
+          </>
+        ) : orderStatus === 'accepted' ? (
+          <>
+            <Ionicons name="checkmark-circle" size={64} color={theme.success} />
+            <Text style={[styles.waitingTitle, { color: theme.success }]}>
+              Ishchi topildi!
+            </Text>
+            <Text style={[styles.waitingSubtitle, { color: theme.textSecondary }]}>
+              Ishchi ma'lumotlarini "Mening e'lonlarim" bo'limida ko'ring
+            </Text>
+            <Button
+              title="Mening e'lonlarimga o'tish"
+              onPress={() => router.push('/(tabs)/my-ads')}
+              style={{ marginTop: spacing.xl }}
+            />
+          </>
+        ) : null}
+      </View>
 
-      {/* Confirmation Modal */}
-      <Modal visible={showConfirmation} transparent animationType="fade">
+      {/* Expired Modal */}
+      <Modal visible={showExpiredModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>
-              {t.confirmHiring}
+            <View style={styles.expiredIconContainer}>
+              <Ionicons name="time-outline" size={64} color={theme.error} />
+            </View>
+            
+            <Text style={[styles.expiredTitle, { color: theme.text }]}>
+              Muddati tugadi
+            </Text>
+            <Text style={[styles.expiredMessage, { color: theme.textSecondary }]}>
+              Afsuski, 10 minut ichida hech qanday ishchi topilmadi. Keyinroq qayta urinib ko'ring yoki boshqa kategoriyani tanlang.
             </Text>
 
-            <View style={styles.modalBody}>
-              {selectedWorkers.map((worker) => (
-                <Card key={worker.id} style={styles.workerSummary}>
-                  <View style={styles.workerSummaryHeader}>
-                    <View style={[styles.workerAvatar, { backgroundColor: theme.primary + '20' }]}>
-                      <Ionicons name="person" size={20} color={theme.primary} />
-                    </View>
-                    <View style={styles.workerSummaryInfo}>
-                      <Text style={[styles.workerSummaryName, { color: theme.text }]}>
-                        {worker.name}
-                      </Text>
-                      <Text style={[styles.workerSummaryDetail, { color: theme.textSecondary }]}>
-                        {worker.age} {t.years} • {worker.arrivalTime} {t.minutes}
-                      </Text>
-                    </View>
-                    <Text style={[styles.workerSummaryPrice, { color: theme.primary }]}>
-                      {worker.dailyRate.toLocaleString()}
-                    </Text>
-                  </View>
-                  <View style={styles.workerSummaryContact}>
-                    <Ionicons name="call" size={16} color={theme.textSecondary} />
-                    <Text style={[styles.workerSummaryPhone, { color: theme.textSecondary }]}>
-                      {worker.phoneNumber}
-                    </Text>
-                  </View>
-                </Card>
-              ))}
-
-              <View style={[styles.totalContainer, { backgroundColor: theme.surfaceVariant }]}>
-                <Text style={[styles.totalLabel, { color: theme.text }]}>
-                  {t.dailyRate}:
-                </Text>
-                <Text style={[styles.totalAmount, { color: theme.primary }]}>
-                  {totalCost.toLocaleString()} {t.som}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.modalButtons}>
+            <View style={styles.expiredButtons}>
               <Button
-                title={t.cancel}
-                onPress={() => setShowConfirmation(false)}
+                title="Qayta urinish"
+                onPress={handleTryAgain}
                 variant="outline"
-                disabled={isHiring}
               />
               <Button
-                title={t.confirm}
-                onPress={handleConfirmHiring}
-                loading={isHiring}
+                title="Bosh sahifa"
+                onPress={handleGoHome}
               />
             </View>
           </View>
@@ -304,6 +326,60 @@ const styles = StyleSheet.create({
   },
   searchingSubtext: {
     ...typography.body,
+  },
+  waitingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  waitingTitle: {
+    ...typography.h2,
+    textAlign: 'center',
+    marginTop: spacing.lg,
+  },
+  waitingSubtitle: {
+    ...typography.body,
+    textAlign: 'center',
+    maxWidth: 300,
+  },
+  timerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: 12,
+    marginTop: spacing.xl,
+  },
+  timerText: {
+    ...typography.h2,
+    fontSize: 28,
+    fontWeight: '700',
+  },
+  timerHint: {
+    ...typography.caption,
+  },
+  expiredIconContainer: {
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  expiredTitle: {
+    ...typography.h2,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  expiredMessage: {
+    ...typography.body,
+    textAlign: 'center',
+    marginBottom: spacing.xl,
+    lineHeight: 24,
+  },
+  expiredButtons: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    width: '100%',
   },
   list: {
     padding: spacing.lg,
