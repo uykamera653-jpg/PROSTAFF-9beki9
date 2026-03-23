@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
@@ -10,7 +10,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import { useUserRole } from '../hooks/useUserRole';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { spacing, typography } from '../constants/theme';
+import { spacing, typography, borderRadius } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -26,6 +26,11 @@ export default function IndexScreen() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // OTP state
+  const [authMode, setAuthMode] = useState<'email-password' | 'otp'>('otp');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
 
 
   const { role, isLoading: roleLoading } = useUserRole();
@@ -255,6 +260,72 @@ export default function IndexScreen() {
 
 
 
+  const handleSendOTP = async () => {
+    if (!email.trim()) {
+      setError('Email kiriting');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+
+      const { data, error } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: {
+          shouldCreateUser: true,
+          data: {
+            name: email.split('@')[0],
+          },
+        },
+      });
+
+      if (error) {
+        setError(error.message);
+      } else {
+        setOtpSent(true);
+        if (Platform.OS === 'web') {
+          alert('Emailingizga tasdiqlash kodi yuborildi');
+        } else {
+          Alert.alert('Muvaffaqiyatli', 'Emailingizga tasdiqlash kodi yuborildi');
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'OTP yuborishda xatolik');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    if (!otpCode.trim() || otpCode.length !== 6) {
+      setError('6 raqamli kodni kiriting');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: otpCode.trim(),
+        type: 'email',
+      });
+
+      if (error) {
+        setError(error.message);
+      } else if (data.user) {
+        // OTP verified - navigation handled by useEffect
+        console.log('✅ OTP verified successfully');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Kodni tasdiqlashda xatolik');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleEmailAuth = async () => {
     if (!email.trim()) {
       setError(t.emailRequired);
@@ -285,8 +356,11 @@ export default function IndexScreen() {
           setError(error.message);
         } else if (data.user) {
           // User registered successfully - auto login
-          alert('Ro\'yxatdan o\'tdingiz!');
-          router.replace('/(tabs)/home');
+          if (Platform.OS === 'web') {
+            alert('Ro\'yxatdan o\'tdingiz!');
+          } else {
+            Alert.alert('Muvaffaqiyatli', 'Ro\'yxatdan o\'tdingiz!');
+          }
         }
       } else {
         // Login
@@ -297,8 +371,6 @@ export default function IndexScreen() {
 
         if (error) {
           setError(error.message);
-        } else if (data.user) {
-          router.replace('/(tabs)/home');
         }
       }
     } catch (err: any) {
@@ -319,46 +391,150 @@ export default function IndexScreen() {
         </View>
 
         <View style={styles.form}>
-          <Input
-            value={email}
-            onChangeText={setEmail}
-            placeholder={t.emailPlaceholder}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            editable={!loading}
-          />
+          {/* Auth mode toggle */}
+          <View style={styles.authModeToggle}>
+            <TouchableOpacity
+              style={[
+                styles.authModeButton,
+                { borderColor: theme.border },
+                authMode === 'otp' && { backgroundColor: theme.primary, borderColor: theme.primary },
+              ]}
+              onPress={() => {
+                setAuthMode('otp');
+                setError('');
+                setOtpSent(false);
+              }}
+              disabled={loading}
+            >
+              <Text style={[styles.authModeText, { color: authMode === 'otp' ? '#FFFFFF' : theme.textSecondary }]}>
+                Email kodi
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.authModeButton,
+                { borderColor: theme.border },
+                authMode === 'email-password' && { backgroundColor: theme.primary, borderColor: theme.primary },
+              ]}
+              onPress={() => {
+                setAuthMode('email-password');
+                setError('');
+                setOtpSent(false);
+              }}
+              disabled={loading}
+            >
+              <Text style={[styles.authModeText, { color: authMode === 'email-password' ? '#FFFFFF' : theme.textSecondary }]}>
+                Email/Parol
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-          <Input
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Parol (kamida 6 ta belgi)"
-            secureTextEntry
-            autoCapitalize="none"
-            editable={!loading}
-          />
+          {authMode === 'otp' ? (
+            // OTP Mode
+            <>
+              <Input
+                value={email}
+                onChangeText={(text) => {
+                  setEmail(text);
+                  setOtpSent(false);
+                  setOtpCode('');
+                }}
+                placeholder="Email manzilingiz"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                editable={!loading && !otpSent}
+              />
 
-          {error ? (
-            <Text style={[styles.error, { color: theme.error }]}>{error}</Text>
-          ) : null}
+              {otpSent && (
+                <Input
+                  value={otpCode}
+                  onChangeText={setOtpCode}
+                  placeholder="6 raqamli kod"
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  editable={!loading}
+                />
+              )}
 
-          <Button
-            title={isSignUp ? "Ro'yxatdan o'tish" : "Kirish"}
-            onPress={handleEmailAuth}
-            loading={loading}
-            disabled={loading}
-          />
+              {error ? (
+                <Text style={[styles.error, { color: theme.error }]}>{error}</Text>
+              ) : null}
 
-          <TouchableOpacity
-            onPress={() => {
-              setIsSignUp(!isSignUp);
-              setError('');
-            }}
-            disabled={loading}
-          >
-            <Text style={[styles.switchText, { color: theme.primary }]}>
-              {isSignUp ? "Akkauntingiz bormi? Kirish" : "Akkauntingiz yo'qmi? Ro'yxatdan o'tish"}
-            </Text>
-          </TouchableOpacity>
+              {!otpSent ? (
+                <Button
+                  title="Kod yuborish"
+                  onPress={handleSendOTP}
+                  loading={loading}
+                  disabled={loading}
+                />
+              ) : (
+                <>
+                  <Button
+                    title="Kodni tasdiqlash"
+                    onPress={handleVerifyOTP}
+                    loading={loading}
+                    disabled={loading}
+                  />
+                  <TouchableOpacity
+                    onPress={() => {
+                      setOtpSent(false);
+                      setOtpCode('');
+                      setError('');
+                    }}
+                    disabled={loading}
+                  >
+                    <Text style={[styles.switchText, { color: theme.primary }]}>
+                      Boshqa email bilan kirish
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </>
+          ) : (
+            // Email/Password Mode
+            <>
+              <Input
+                value={email}
+                onChangeText={setEmail}
+                placeholder={t.emailPlaceholder}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                editable={!loading}
+              />
+
+              <Input
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Parol (kamida 6 ta belgi)"
+                secureTextEntry
+                autoCapitalize="none"
+                editable={!loading}
+              />
+
+              {error ? (
+                <Text style={[styles.error, { color: theme.error }]}>{error}</Text>
+              ) : null}
+
+              <Button
+                title={isSignUp ? "Ro'yxatdan o'tish" : "Kirish"}
+                onPress={handleEmailAuth}
+                loading={loading}
+                disabled={loading}
+              />
+
+              <TouchableOpacity
+                onPress={() => {
+                  setIsSignUp(!isSignUp);
+                  setError('');
+                }}
+                disabled={loading}
+              >
+                <Text style={[styles.switchText, { color: theme.primary }]}>
+                  {isSignUp ? "Akkauntingiz bormi? Kirish" : "Akkauntingiz yo'qmi? Ro'yxatdan o'tish"}
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
 
           <View style={styles.divider}>
             <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
@@ -446,6 +622,22 @@ const styles = StyleSheet.create({
     ...typography.body,
     textAlign: 'center',
     textDecorationLine: 'underline',
+  },
+  authModeToggle: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  authModeButton: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+    alignItems: 'center',
+  },
+  authModeText: {
+    ...typography.bodyMedium,
+    fontWeight: '600',
   },
 
 });
