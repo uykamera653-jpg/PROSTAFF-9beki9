@@ -23,6 +23,18 @@ export default function RootLayout() {
                     <Stack screenOptions={{ headerShown: false }}>
                       <Stack.Screen name="index" />
                       <Stack.Screen name="(tabs)" />
+                      <Stack.Screen name="admin-panel" />
+                      <Stack.Screen name="worker-dashboard" />
+                      <Stack.Screen name="company-dashboard" />
+                      <Stack.Screen name="worker-onboarding" />
+                      <Stack.Screen name="company-onboarding" />
+                      <Stack.Screen name="worker-profile" />
+                      <Stack.Screen name="company-profile" />
+                      <Stack.Screen name="daily-workers" />
+                      <Stack.Screen name="order-service" />
+                      <Stack.Screen name="post-job" />
+                      <Stack.Screen name="worker-search" />
+                      <Stack.Screen name="company-detail" />
                     </Stack>
                   </WorkersProvider>
                 </ReviewsProvider>
