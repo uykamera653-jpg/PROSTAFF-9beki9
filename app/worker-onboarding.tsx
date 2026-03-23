@@ -44,11 +44,14 @@ export default function WorkerOnboardingScreen() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingCategories, setLoadingCategories] = useState(true);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [isEditMode, setIsEditMode] = useState(false);
   const { showAlert, AlertComponent } = useAlert();
 
   useEffect(() => {
     loadCategories();
-  }, []);
+    loadWorkerProfile();
+  }, [user]);
 
   const loadCategories = async () => {
     try {
@@ -65,6 +68,50 @@ export default function WorkerOnboardingScreen() {
       showAlert('Xatolik', 'Kategoriyalarni yuklashda xatolik yuz berdi');
     } finally {
       setLoadingCategories(false);
+    }
+  };
+
+  const loadWorkerProfile = async () => {
+    if (!user) return;
+
+    try {
+      setLoadingProfile(true);
+
+      // Load worker profile
+      const { data: worker, error: workerError } = await supabase
+        .from('workers')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (workerError && workerError.code !== 'PGRST116') {
+        console.error('Worker profile error:', workerError);
+      }
+
+      if (worker) {
+        // Profile exists - edit mode
+        setIsEditMode(true);
+        setFullName(worker.full_name || '');
+        setPhone(worker.phone || '');
+        setMinPrice(worker.min_price?.toString() || '200000');
+        setMaxPrice(worker.max_price?.toString() || '300000');
+
+        // Load worker categories
+        const { data: workerCats, error: catsError } = await supabase
+          .from('worker_categories')
+          .select('category_id')
+          .eq('worker_id', user.id);
+
+        if (catsError) {
+          console.error('Worker categories error:', catsError);
+        } else if (workerCats) {
+          setSelectedCategories(workerCats.map(c => c.category_id));
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to load worker profile:', error);
+    } finally {
+      setLoadingProfile(false);
     }
   };
 
@@ -152,8 +199,16 @@ export default function WorkerOnboardingScreen() {
 
       showAlert(
         'Muvaffaqiyatli!',
-        'Ishchi profili saqlandi. Endi buyurtmalarni qabul qilishingiz mumkin.',
-        [{ text: 'OK', onPress: () => router.replace('/worker-dashboard') }]
+        isEditMode 
+          ? 'Profil muvaffaqiyatli yangilandi!'
+          : 'Ishchi profili saqlandi. Endi buyurtmalarni qabul qilishingiz mumkin.',
+        [{ text: 'OK', onPress: () => {
+          if (isEditMode) {
+            router.back();
+          } else {
+            router.replace('/worker-dashboard');
+          }
+        }}]
       );
     } catch (error: any) {
       console.error('Failed to complete onboarding:', error);
@@ -170,7 +225,7 @@ export default function WorkerOnboardingScreen() {
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>
-          Ishchi profili yaratish
+          {isEditMode ? 'Profilni tahrirlash' : 'Ishchi profili yaratish'}
         </Text>
         <View style={styles.backButton} />
       </View>
@@ -288,10 +343,10 @@ export default function WorkerOnboardingScreen() {
         </Card>
 
         <Button
-          title="Profilni yaratish"
+          title={isEditMode ? 'Saqlash' : 'Profilni yaratish'}
           onPress={handleComplete}
           loading={loading}
-          disabled={loading || loadingCategories}
+          disabled={loading || loadingCategories || loadingProfile}
           style={styles.completeButton}
         />
 
