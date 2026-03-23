@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,20 +8,14 @@ import { useTheme } from '../hooks/useTheme';
 import { useTranslation } from '../hooks/useTranslation';
 import { CategoryCard } from '../components/feature/CategoryCard';
 import { spacing, typography } from '../constants/theme';
+import { supabase } from '../lib/supabase';
 
-const categories = [
-  { key: 'gardenWork', icon: 'leaf' as const },
-  { key: 'loading', icon: 'cube' as const },
-  { key: 'roomCleaning', icon: 'home' as const },
-  { key: 'postRepairCleaning', icon: 'brush' as const },
-  { key: 'partyHelper', icon: 'wine' as const },
-  { key: 'childCare', icon: 'happy' as const },
-  { key: 'construction', icon: 'construct' as const },
-  { key: 'cook', icon: 'restaurant' as const },
-  { key: 'waiter', icon: 'person' as const },
-  { key: 'dishwasher', icon: 'water' as const },
-  { key: 'other', icon: 'apps' as const },
-];
+interface Category {
+  id: string;
+  name_uz: string;
+  name_ru: string;
+  icon: string;
+}
 
 export default function DailyWorkersScreen() {
   const router = useRouter();
@@ -29,10 +23,37 @@ export default function DailyWorkersScreen() {
   const { theme } = useTheme();
   const { t } = useTranslation();
 
-  const handleCategorySelect = (category: string) => {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  const loadCategories = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*')
+        .order('name_uz');
+
+      if (error) throw error;
+      if (data) setCategories(data);
+    } catch (error: any) {
+      console.error('Failed to load categories:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCategorySelect = (categoryId: string, categoryName: string) => {
     router.push({
       pathname: '/post-job',
-      params: { category },
+      params: { 
+        categoryId,
+        categoryName,
+      },
     });
   };
 
@@ -53,17 +74,23 @@ export default function DailyWorkersScreen() {
       >
         <Text style={[styles.title, { color: theme.text }]}>{t.selectCategory}</Text>
         
-        <View style={styles.grid}>
-          {categories.map((category) => (
-            <View key={category.key} style={styles.gridItem}>
-              <CategoryCard
-                title={t[category.key as keyof typeof t] as string}
-                icon={category.icon}
-                onPress={() => handleCategorySelect(category.key)}
-              />
-            </View>
-          ))}
-        </View>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.primary} />
+          </View>
+        ) : (
+          <View style={styles.grid}>
+            {categories.map((category) => (
+              <View key={category.id} style={styles.gridItem}>
+                <CategoryCard
+                  title={category.name_uz}
+                  icon={category.icon as any}
+                  onPress={() => handleCategorySelect(category.id, category.name_uz)}
+                />
+              </View>
+            ))}
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -110,5 +137,9 @@ const styles = StyleSheet.create({
   },
   gridItem: {
     width: '50%',
+  },
+  loadingContainer: {
+    paddingVertical: spacing.xxl,
+    alignItems: 'center',
   },
 });

@@ -39,6 +39,8 @@ export default function PostJobScreen() {
   const { addJob } = useJobs();
 
   const category = params.category as string;
+  const categoryId = params.categoryId as string;
+  const categoryName = params.categoryName as string;
 
   const [gender, setGender] = useState<'male' | 'female' | 'any'>('any');
   const [description, setDescription] = useState('');
@@ -150,17 +152,27 @@ export default function PostJobScreen() {
         }
       }
 
-      // Get category ID from categories table
-      const { data: categoryData, error: catError } = await supabase
-        .from('categories')
-        .select('id')
-        .ilike('name_uz', `%${category}%`)
-        .single();
+      // Get category ID from params or search in database
+      let finalCategoryId = categoryId;
+      
+      if (!finalCategoryId) {
+        // Fallback: search by name if categoryId not provided
+        const { data: categoryData, error: catError } = await supabase
+          .from('categories')
+          .select('id')
+          .or(`name_uz.ilike.%${categoryName || category}%,name_ru.ilike.%${categoryName || category}%`)
+          .limit(1)
+          .single();
 
-      if (catError) {
-        console.error('Category not found:', catError);
-        throw new Error('Kategoriya topilmadi');
+        if (catError) {
+          console.error('Category not found:', catError);
+          throw new Error('Kategoriya topilmadi');
+        }
+        
+        finalCategoryId = categoryData.id;
       }
+
+      console.log('✅ Using category ID:', finalCategoryId);
 
       // Create order in database with 10-minute expiration
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
@@ -169,8 +181,8 @@ export default function PostJobScreen() {
         .from('orders')
         .insert({
           customer_id: user.id,
-          category_id: categoryData.id,
-          title: category,
+          category_id: finalCategoryId,
+          title: categoryName || category,
           description: description.trim(),
           location: location.trim() || 'Manzil ko\'rsatilmagan',
           latitude,
@@ -197,7 +209,7 @@ export default function PostJobScreen() {
           {
             body: {
               orderId: orderData.id,
-              category,
+              category: categoryName || category,
               location: location.trim() || 'Manzil ko\'rsatilmagan',
               latitude,
               longitude,
@@ -223,7 +235,7 @@ export default function PostJobScreen() {
       router.push({
         pathname: '/worker-search',
         params: { 
-          category,
+          category: categoryName || category,
           orderId: orderData.id,
         },
       });
@@ -245,9 +257,9 @@ export default function PostJobScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>
-          {t[category as keyof typeof t] as string}
-        </Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{
+          categoryName || (t[category as keyof typeof t] as string)
+        }</Text>
         <View style={styles.placeholder} />
       </View>
 
@@ -369,7 +381,7 @@ export default function PostJobScreen() {
               <View style={styles.summaryItem}>
                 <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>{t.category}:</Text>
                 <Text style={[styles.summaryValue, { color: theme.text }]}>
-                  {t[category as keyof typeof t] as string}
+                  {categoryName || (t[category as keyof typeof t] as string)}
                 </Text>
               </View>
 
