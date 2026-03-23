@@ -71,6 +71,7 @@ export default function AdminPanelScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [showRoleModal, setShowRoleModal] = useState(false);
+  const [isUpdatingRole, setIsUpdatingRole] = useState(false);
   const { showAlert, AlertComponent } = useAlert();
   const channelRef = useRef<RealtimeChannel | null>(null);
   const hasCheckedAuth = useRef(false);
@@ -191,13 +192,18 @@ export default function AdminPanelScreen() {
   };
 
   const handleRoleChange = async (newRole: UserRole) => {
-    if (!selectedUser) return;
+    if (!selectedUser || isUpdatingRole) return;
 
     try {
+      console.log('🔄 Updating role:', { userId: selectedUser.id, newRole });
+      setIsUpdatingRole(true);
+
       // Call Edge Function instead of direct database update
       const { data: session } = await supabase.auth.getSession();
       if (!session?.session) {
-        showAlert('Xatolik', 'Session yo\'q');
+        console.error('❌ No session found');
+        showAlert('Xatolik', 'Session yo\'q. Qayta login qiling.');
+        setIsUpdatingRole(false);
         return;
       }
 
@@ -214,25 +220,36 @@ export default function AdminPanelScreen() {
         }),
       });
 
+      console.log('📡 Response status:', response.status);
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Failed to update role:', errorText);
         showAlert('Xatolik', `Rolni yangilashda xatolik: ${errorText}`);
+        setIsUpdatingRole(false);
         return;
       }
 
       const result = await response.json();
+      console.log('✅ Result:', result);
+
       if (result.success) {
         showAlert('Muvaffaqiyatli', result.message || `Rol ${newRole}ga o'zgartirildi`);
-        setShowRoleModal(false);
-        setSelectedUser(null);
         
         // Force refresh to ensure latest data
         await fetchUsers();
+        
+        // Close modal after successful update
+        setShowRoleModal(false);
+        setSelectedUser(null);
+      } else {
+        showAlert('Xatolik', result.error || 'Noma\'lum xatolik');
       }
     } catch (error: any) {
       console.error('❌ Role change error:', error);
-      showAlert('Xatolik', 'Rolni yangilashda xatolik yuz berdi');
+      showAlert('Xatolik', `Rolni yangilashda xatolik: ${error.message || 'Network error'}`);
+    } finally {
+      setIsUpdatingRole(false);
     }
   };
 
@@ -899,9 +916,11 @@ export default function AdminPanelScreen() {
                   styles.roleOption,
                   { borderBottomColor: theme.border },
                   selectedUser?.role === roleOption && { backgroundColor: theme.surfaceVariant },
+                  isUpdatingRole && { opacity: 0.5 },
                 ]}
                 onPress={() => handleRoleChange(roleOption)}
                 activeOpacity={0.7}
+                disabled={isUpdatingRole}
               >
                 <View style={styles.roleOptionContent}>
                   <Ionicons 
@@ -913,11 +932,21 @@ export default function AdminPanelScreen() {
                     {roleOption.charAt(0).toUpperCase() + roleOption.slice(1)}
                   </Text>
                 </View>
-                {selectedUser?.role === roleOption && (
+                {selectedUser?.role === roleOption && !isUpdatingRole && (
                   <Ionicons name="checkmark-circle" size={24} color={theme.success} />
+                )}
+                {isUpdatingRole && selectedUser?.role !== roleOption && (
+                  <ActivityIndicator size="small" color={theme.primary} />
                 )}
               </TouchableOpacity>
             ))}
+
+            {isUpdatingRole && (
+              <View style={styles.loadingOverlay}>
+                <ActivityIndicator size="large" color={theme.primary} />
+                <Text style={[styles.loadingText, { color: theme.text }]}>Yangilanmoqda...</Text>
+              </View>
+            )}
 
             <Button 
               title={t.cancel} 
@@ -1260,5 +1289,17 @@ const styles = StyleSheet.create({
   },
   configModalButton: {
     flex: 1,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: borderRadius.lg,
   },
 });
