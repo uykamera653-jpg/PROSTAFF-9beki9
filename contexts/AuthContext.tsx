@@ -1,7 +1,8 @@
-import React, { createContext, useState, ReactNode, useEffect } from 'react';
+import React, { createContext, useState, ReactNode, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User } from '../types';
 import { supabase } from '../lib/supabase';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 interface AuthContextType {
   user: User | null;
@@ -17,6 +18,7 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const profileChannelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -26,15 +28,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('Auth state changed:', event);
       if (session?.user) {
         await loadUserProfile(session.user.id, session.user.email || '');
+        setupProfileListener(session.user.id);
       } else {
         setUser(null);
+        cleanupProfileListener();
       }
     });
 
     return () => {
       subscription.unsubscribe();
+      cleanupProfileListener();
     };
   }, []);
+
+  const setupProfileListener = (userId: string) => {
+    // Cleanup existing listener
+    cleanupProfileListener();
+
+    // Setup real-time listener for profile changes
+    profileChannelRef.current = supabase
+      .channel(`profile_${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'user_profiles',
+          filter: `id=eq.${userId}`,
+        },
+        (payload) => {
+          console.log('✅ Profile updated:', payload.new);
+          const updatedProfile = payload.new as any;
+          setUser((prevUser) => {
+            if (!prevUser) return null;
+            return {
+              ...prevUser,
+              name: updatedProfile.name || prevUser.name,
+            };
+          });
+        }
+      )
+      .subscribe();
+
+    console.log('🎧 Profile listener setup for user:', userId);
+  };
+
+  const cleanupProfileListener = () => {
+    if (profileChannelRef.current) {
+      supabase.removeChannel(profileChannelRef.current);
+      profileChannelRef.current = null;
+      console.log('🔇 Profile listener cleaned up');
+    }
+  };
 
   const loadUserProfile = async (userId: string, email: string) => {
     try {
