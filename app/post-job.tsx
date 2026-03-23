@@ -104,24 +104,47 @@ export default function PostJobScreen() {
       if (photoUri) {
         try {
           const fileName = `order_${user.id}_${Date.now()}.jpg`;
-          const formData = new FormData();
-          formData.append('file', {
-            uri: photoUri,
-            name: fileName,
-            type: 'image/jpeg',
-          } as any);
+          
+          let fileBlob: Blob | ArrayBuffer;
+          
+          if (Platform.OS === 'web') {
+            // Web: fetch as blob
+            const response = await fetch(photoUri);
+            fileBlob = await response.blob();
+          } else {
+            // Mobile: convert base64 to arraybuffer
+            const base64 = await fetch(photoUri);
+            const blob = await base64.blob();
+            const reader = new FileReader();
+            
+            fileBlob = await new Promise<ArrayBuffer>((resolve, reject) => {
+              reader.onloadend = () => {
+                if (reader.result instanceof ArrayBuffer) {
+                  resolve(reader.result);
+                } else {
+                  reject(new Error('Failed to read file'));
+                }
+              };
+              reader.onerror = reject;
+              reader.readAsArrayBuffer(blob);
+            });
+          }
 
           const { data: uploadData, error: uploadError } = await supabase.storage
             .from('order-images')
-            .upload(fileName, formData);
+            .upload(fileName, fileBlob, {
+              contentType: 'image/jpeg',
+              upsert: false,
+            });
 
           if (uploadError) {
             console.warn('Image upload failed:', uploadError);
-          } else {
+          } else if (uploadData) {
             const { data: urlData } = supabase.storage
               .from('order-images')
               .getPublicUrl(fileName);
             imageUrl = urlData.publicUrl;
+            console.log('✅ Image uploaded:', imageUrl);
           }
         } catch (uploadErr) {
           console.warn('Image upload error:', uploadErr);
