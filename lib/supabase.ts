@@ -5,6 +5,14 @@ import { Platform } from 'react-native';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
+// Debug: Log environment variables
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('❌ SUPABASE CONFIG ERROR:');
+  console.error('URL:', supabaseUrl ? '✅' : '❌ MISSING');
+  console.error('ANON_KEY:', supabaseAnonKey ? '✅' : '❌ MISSING');
+  console.error('All env:', process.env);
+}
+
 const createStorageAdapter = () => {
   if (Platform.OS === 'web') {
     return {
@@ -42,3 +50,5 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
 });
+
+console.log('✅ Supabase client created successfully');
