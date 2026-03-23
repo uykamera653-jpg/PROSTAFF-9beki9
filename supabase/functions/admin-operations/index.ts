@@ -33,8 +33,17 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get authenticated user
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    // Get authenticated user and profile in parallel for better performance
+    const [authResult, profileResult] = await Promise.all([
+      supabase.auth.getUser(token),
+      (async () => {
+        const { data: { user } } = await supabase.auth.getUser(token);
+        if (!user) return { data: null, error: { message: 'User not found' } };
+        return supabase.from('user_profiles').select('role').eq('id', user.id).single();
+      })()
+    ]);
+
+    const { data: { user }, error: userError } = authResult;
     
     if (userError || !user) {
       console.error('❌ User auth error:', userError);
@@ -44,14 +53,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log('✅ User authenticated:', user.id);
-
-    // Check if user is admin or moderator
-    const { data: profile, error: profileError } = await supabase
-      .from('user_profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
+    const { data: profile, error: profileError } = profileResult;
 
     if (profileError || !profile) {
       console.error('❌ Profile error:', profileError);
@@ -69,7 +71,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log('👑 Admin access granted - role:', profile.role);
+    console.log('👑 Admin access granted - role:', profile.role, '| User:', user.id);
 
     // Parse request body
     const body: RequestBody = await req.json();
