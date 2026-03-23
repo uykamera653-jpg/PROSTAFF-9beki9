@@ -28,7 +28,7 @@ export default function IndexScreen() {
   const [error, setError] = useState('');
 
   // OTP state
-  const [authMode, setAuthMode] = useState<'email-password' | 'otp'>('otp');
+  const [authMode, setAuthMode] = useState<'email-password' | 'otp'>('email-password');
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
 
