@@ -2,9 +2,13 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import { corsHeaders, handleCors } from '../_shared/cors.ts';
 
 interface RequestBody {
-  operation: 'get_users' | 'update_role' | 'get_stats' | 'delete_user';
+  operation: 'get_users' | 'update_role' | 'get_stats' | 'delete_user' | 'get_workers' | 'get_companies' | 'toggle_worker_online' | 'toggle_company_online' | 'toggle_worker_block' | 'toggle_company_block';
   user_id?: string;
   new_role?: string;
+  worker_id?: string;
+  company_id?: string;
+  is_online?: boolean;
+  is_blocked?: boolean;
 }
 
 Deno.serve(async (req) => {
@@ -204,6 +208,180 @@ Deno.serve(async (req) => {
         console.log('✅ User deleted successfully');
         return new Response(
           JSON.stringify({ success: true, message: 'Foydalanuvchi o\'chirildi' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'get_workers': {
+        const { data: workers, error } = await supabase
+          .from('workers')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('❌ Get workers error:', error);
+          return new Response(
+            JSON.stringify({ error: 'Ishchilarni yuklashda xatolik' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log('✅ Workers loaded:', workers?.length || 0);
+        return new Response(
+          JSON.stringify({ workers: workers || [] }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'get_companies': {
+        const { data: companies, error } = await supabase
+          .from('companies')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('❌ Get companies error:', error);
+          return new Response(
+            JSON.stringify({ error: 'Firmalarni yuklashda xatolik' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log('✅ Companies loaded:', companies?.length || 0);
+        return new Response(
+          JSON.stringify({ companies: companies || [] }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'toggle_worker_online': {
+        if (!body.worker_id || body.is_online === undefined) {
+          return new Response(
+            JSON.stringify({ error: 'worker_id va is_online majburiy' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log(`🔄 Toggling worker ${body.worker_id} online status to ${body.is_online}`);
+
+        const { error } = await supabase
+          .from('workers')
+          .update({
+            is_online: body.is_online,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', body.worker_id);
+
+        if (error) {
+          console.error('❌ Toggle worker online error:', error);
+          return new Response(
+            JSON.stringify({ error: 'Online holatini yangilashda xatolik' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log('✅ Worker online status updated');
+        return new Response(
+          JSON.stringify({ success: true, message: 'Online holat o\'zgartirildi' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'toggle_company_online': {
+        if (!body.company_id || body.is_online === undefined) {
+          return new Response(
+            JSON.stringify({ error: 'company_id va is_online majburiy' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log(`🔄 Toggling company ${body.company_id} online status to ${body.is_online}`);
+
+        const { error } = await supabase
+          .from('companies')
+          .update({
+            is_online: body.is_online,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', body.company_id);
+
+        if (error) {
+          console.error('❌ Toggle company online error:', error);
+          return new Response(
+            JSON.stringify({ error: 'Online holatini yangilashda xatolik' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log('✅ Company online status updated');
+        return new Response(
+          JSON.stringify({ success: true, message: 'Online holat o\'zgartirildi' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'toggle_worker_block': {
+        if (!body.worker_id || body.is_blocked === undefined) {
+          return new Response(
+            JSON.stringify({ error: 'worker_id va is_blocked majburiy' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log(`🔄 Toggling worker ${body.worker_id} block status to ${body.is_blocked}`);
+
+        const { error } = await supabase
+          .from('workers')
+          .update({
+            is_blocked: body.is_blocked,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', body.worker_id);
+
+        if (error) {
+          console.error('❌ Toggle worker block error:', error);
+          return new Response(
+            JSON.stringify({ error: 'Bloklash holatini yangilashda xatolik' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log('✅ Worker block status updated');
+        return new Response(
+          JSON.stringify({ success: true, message: body.is_blocked ? 'Ishchi bloklandi' : 'Ishchi blokdan chiqarildi' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      case 'toggle_company_block': {
+        if (!body.company_id || body.is_blocked === undefined) {
+          return new Response(
+            JSON.stringify({ error: 'company_id va is_blocked majburiy' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log(`🔄 Toggling company ${body.company_id} block status to ${body.is_blocked}`);
+
+        const { error } = await supabase
+          .from('companies')
+          .update({
+            is_blocked: body.is_blocked,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', body.company_id);
+
+        if (error) {
+          console.error('❌ Toggle company block error:', error);
+          return new Response(
+            JSON.stringify({ error: 'Bloklash holatini yangilashda xatolik' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        console.log('✅ Company block status updated');
+        return new Response(
+          JSON.stringify({ success: true, message: body.is_blocked ? 'Firma bloklandi' : 'Firma blokdan chiqarildi' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }

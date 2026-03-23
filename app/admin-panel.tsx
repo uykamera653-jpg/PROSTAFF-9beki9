@@ -32,6 +32,32 @@ interface UserProfile {
   created_at: string;
 }
 
+interface Worker {
+  id: string;
+  full_name: string;
+  phone: string;
+  rating: number;
+  completed_orders: number;
+  success_rate: number;
+  min_price: number;
+  max_price: number;
+  is_online: boolean;
+  is_blocked: boolean;
+  created_at: string;
+}
+
+interface Company {
+  id: string;
+  company_name: string;
+  description?: string;
+  phone: string;
+  rating: number;
+  completed_orders: number;
+  is_online: boolean;
+  is_blocked: boolean;
+  created_at: string;
+}
+
 export default function AdminPanelScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -40,6 +66,8 @@ export default function AdminPanelScreen() {
   const { role: currentUserRole, isLoading: roleLoading } = useUserRole();
 
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [showRoleModal, setShowRoleModal] = useState(false);
@@ -48,7 +76,7 @@ export default function AdminPanelScreen() {
   const hasCheckedAuth = useRef(false);
 
   // Config management states
-  const [activeTab, setActiveTab] = useState<'users' | 'config'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'workers' | 'companies' | 'config'>('users');
   const { configs, refreshConfigs } = useAppConfig();
   const [selectedConfig, setSelectedConfig] = useState<AppConfig | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
@@ -70,10 +98,12 @@ export default function AdminPanelScreen() {
 
     // Initial fetch
     fetchUsers();
+    fetchWorkers();
+    fetchCompanies();
 
-    // Setup real-time subscription
+    // Setup real-time subscription for all tables
     channelRef.current = supabase
-      .channel('user_profiles_admin_changes')
+      .channel('admin_panel_changes')
       .on(
         'postgres_changes',
         {
@@ -82,8 +112,29 @@ export default function AdminPanelScreen() {
           table: 'user_profiles',
         },
         () => {
-          // Re-fetch when any change occurs
           fetchUsers();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'workers',
+        },
+        () => {
+          fetchWorkers();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'companies',
+        },
+        () => {
+          fetchCompanies();
         }
       )
       .subscribe();
@@ -200,6 +251,219 @@ export default function AdminPanelScreen() {
       case 'worker': return 'hammer';
       case 'company': return 'business';
       default: return 'person';
+    }
+  };
+
+  const fetchWorkers = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session) {
+        console.error('❌ No session');
+        return;
+      }
+
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.session.access_token}`,
+        },
+        body: JSON.stringify({ operation: 'get_workers' }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Failed to fetch workers:', errorText);
+        return;
+      }
+
+      const result = await response.json();
+      if (result.workers) {
+        setWorkers(result.workers);
+      }
+    } catch (error: any) {
+      console.error('❌ Fetch workers error:', error);
+    }
+  };
+
+  const fetchCompanies = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session) {
+        console.error('❌ No session');
+        return;
+      }
+
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.session.access_token}`,
+        },
+        body: JSON.stringify({ operation: 'get_companies' }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Failed to fetch companies:', errorText);
+        return;
+      }
+
+      const result = await response.json();
+      if (result.companies) {
+        setCompanies(result.companies);
+      }
+    } catch (error: any) {
+      console.error('❌ Fetch companies error:', error);
+    }
+  };
+
+  const toggleWorkerOnline = async (workerId: string, currentStatus: boolean) => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session) return;
+
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.session.access_token}`,
+        },
+        body: JSON.stringify({
+          operation: 'toggle_worker_online',
+          worker_id: workerId,
+          is_online: !currentStatus,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        showAlert('Xatolik', errorText);
+        return;
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        await fetchWorkers();
+      }
+    } catch (error: any) {
+      console.error('❌ Toggle worker online error:', error);
+      showAlert('Xatolik', 'Online holatini o\'zgartirish xatoligi');
+    }
+  };
+
+  const toggleCompanyOnline = async (companyId: string, currentStatus: boolean) => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session) return;
+
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.session.access_token}`,
+        },
+        body: JSON.stringify({
+          operation: 'toggle_company_online',
+          company_id: companyId,
+          is_online: !currentStatus,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        showAlert('Xatolik', errorText);
+        return;
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        await fetchCompanies();
+      }
+    } catch (error: any) {
+      console.error('❌ Toggle company online error:', error);
+      showAlert('Xatolik', 'Online holatini o\'zgartirish xatoligi');
+    }
+  };
+
+  const toggleWorkerBlock = async (workerId: string, currentStatus: boolean) => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session) return;
+
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.session.access_token}`,
+        },
+        body: JSON.stringify({
+          operation: 'toggle_worker_block',
+          worker_id: workerId,
+          is_blocked: !currentStatus,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        showAlert('Xatolik', errorText);
+        return;
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        showAlert('Muvaffaqiyatli', result.message);
+        await fetchWorkers();
+      }
+    } catch (error: any) {
+      console.error('❌ Toggle worker block error:', error);
+      showAlert('Xatolik', 'Bloklash holatini o\'zgartirish xatoligi');
+    }
+  };
+
+  const toggleCompanyBlock = async (companyId: string, currentStatus: boolean) => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session) return;
+
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/admin-operations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.session.access_token}`,
+        },
+        body: JSON.stringify({
+          operation: 'toggle_company_block',
+          company_id: companyId,
+          is_blocked: !currentStatus,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        showAlert('Xatolik', errorText);
+        return;
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        showAlert('Muvaffaqiyatli', result.message);
+        await fetchCompanies();
+      }
+    } catch (error: any) {
+      console.error('❌ Toggle company block error:', error);
+      showAlert('Xatolik', 'Bloklash holatini o\'zgartirish xatoligi');
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      router.replace('/');
+    } catch (error: any) {
+      console.error('❌ Logout error:', error);
+      showAlert('Xatolik', 'Chiqishda xatolik');
     }
   };
 
@@ -320,12 +584,22 @@ export default function AdminPanelScreen() {
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Admin Panel</Text>
-        <TouchableOpacity onPress={activeTab === 'users' ? fetchUsers : refreshConfigs}>
-          <Ionicons name="refresh" size={24} color={theme.primary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: spacing.md }}>
+          <TouchableOpacity onPress={() => {
+            if (activeTab === 'users') fetchUsers();
+            else if (activeTab === 'workers') fetchWorkers();
+            else if (activeTab === 'companies') fetchCompanies();
+            else refreshConfigs();
+          }}>
+            <Ionicons name="refresh" size={24} color={theme.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={24} color={theme.error} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <View style={styles.mainTabsContainer}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mainTabsContainer} contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg }}>
         <TouchableOpacity
           style={[
             styles.mainTab,
@@ -336,11 +610,45 @@ export default function AdminPanelScreen() {
         >
           <Ionicons
             name="people"
-            size={20}
+            size={18}
             color={activeTab === 'users' ? '#FFFFFF' : theme.primary}
           />
           <Text style={[styles.mainTabText, { color: activeTab === 'users' ? '#FFFFFF' : theme.primary }]}>
-            Foydalanuvchilar
+            Users
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.mainTab,
+            activeTab === 'workers' && { backgroundColor: theme.primary, borderColor: theme.primary },
+          ]}
+          onPress={() => setActiveTab('workers')}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="hammer"
+            size={18}
+            color={activeTab === 'workers' ? '#FFFFFF' : theme.primary}
+          />
+          <Text style={[styles.mainTabText, { color: activeTab === 'workers' ? '#FFFFFF' : theme.primary }]}>
+            Ishchilar
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.mainTab,
+            activeTab === 'companies' && { backgroundColor: theme.primary, borderColor: theme.primary },
+          ]}
+          onPress={() => setActiveTab('companies')}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="business"
+            size={18}
+            color={activeTab === 'companies' ? '#FFFFFF' : theme.primary}
+          />
+          <Text style={[styles.mainTabText, { color: activeTab === 'companies' ? '#FFFFFF' : theme.primary }]}>
+            Firmalar
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -353,14 +661,14 @@ export default function AdminPanelScreen() {
         >
           <Ionicons
             name="settings"
-            size={20}
+            size={18}
             color={activeTab === 'config' ? '#FFFFFF' : theme.primary}
           />
           <Text style={[styles.mainTabText, { color: activeTab === 'config' ? '#FFFFFF' : theme.primary }]}>
-            Konfiguratsiya
+            Config
           </Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
 
       {activeTab === 'users' && (
         <View style={styles.statsContainer}>
@@ -389,7 +697,7 @@ export default function AdminPanelScreen() {
         </View>
       )}
 
-      {activeTab === 'users' && isLoading ? (
+      {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.primary} />
         </View>
@@ -405,6 +713,150 @@ export default function AdminPanelScreen() {
               <Ionicons name="people-outline" size={64} color={theme.textTertiary} />
               <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
                 No users found
+              </Text>
+            </View>
+          }
+        />
+      ) : activeTab === 'workers' ? (
+        <FlatList
+          data={workers}
+          renderItem={({ item }) => (
+            <Card style={styles.userCard}>
+              <View style={styles.userInfo}>
+                <View style={[styles.userAvatar, { backgroundColor: theme.primary + '20' }]}>
+                  <Ionicons name="hammer" size={24} color={theme.primary} />
+                </View>
+                <View style={styles.userDetails}>
+                  <Text style={[styles.userName, { color: theme.text }]}>{item.full_name}</Text>
+                  <Text style={[styles.userEmail, { color: theme.textSecondary }]}>{item.phone}</Text>
+                  <View style={{ flexDirection: 'row', gap: spacing.xs, marginTop: spacing.xs / 2 }}>
+                    <Text style={[styles.userEmail, { color: theme.textSecondary }]}>⭐ {item.rating}</Text>
+                    <Text style={[styles.userEmail, { color: theme.textSecondary }]}>• {item.completed_orders} orders</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.roleSection}>
+                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                  <TouchableOpacity
+                    style={[
+                      styles.statusBadge,
+                      { backgroundColor: item.is_online ? theme.success + '20' : theme.textTertiary + '20' },
+                    ]}
+                    onPress={() => toggleWorkerOnline(item.id, item.is_online)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={item.is_online ? 'radio-button-on' : 'radio-button-off'}
+                      size={16}
+                      color={item.is_online ? theme.success : theme.textTertiary}
+                    />
+                    <Text style={[styles.statusText, { color: item.is_online ? theme.success : theme.textTertiary }]}>
+                      {item.is_online ? 'Online' : 'Offline'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.statusBadge,
+                      { backgroundColor: item.is_blocked ? theme.error + '20' : theme.warning + '20' },
+                    ]}
+                    onPress={() => toggleWorkerBlock(item.id, item.is_blocked)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={item.is_blocked ? 'lock-closed' : 'lock-open'}
+                      size={16}
+                      color={item.is_blocked ? theme.error : theme.warning}
+                    />
+                    <Text style={[styles.statusText, { color: item.is_blocked ? theme.error : theme.warning }]}>
+                      {item.is_blocked ? 'Blocked' : 'Active'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Card>
+          )}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.usersList}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="hammer-outline" size={64} color={theme.textTertiary} />
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                Ishchilar topilmadi
+              </Text>
+            </View>
+          }
+        />
+      ) : activeTab === 'companies' ? (
+        <FlatList
+          data={companies}
+          renderItem={({ item }) => (
+            <Card style={styles.userCard}>
+              <View style={styles.userInfo}>
+                <View style={[styles.userAvatar, { backgroundColor: theme.warning + '20' }]}>
+                  <Ionicons name="business" size={24} color={theme.warning} />
+                </View>
+                <View style={styles.userDetails}>
+                  <Text style={[styles.userName, { color: theme.text }]}>{item.company_name}</Text>
+                  <Text style={[styles.userEmail, { color: theme.textSecondary }]}>{item.phone}</Text>
+                  <View style={{ flexDirection: 'row', gap: spacing.xs, marginTop: spacing.xs / 2 }}>
+                    <Text style={[styles.userEmail, { color: theme.textSecondary }]}>⭐ {item.rating}</Text>
+                    <Text style={[styles.userEmail, { color: theme.textSecondary }]}>• {item.completed_orders} orders</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.roleSection}>
+                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                  <TouchableOpacity
+                    style={[
+                      styles.statusBadge,
+                      { backgroundColor: item.is_online ? theme.success + '20' : theme.textTertiary + '20' },
+                    ]}
+                    onPress={() => toggleCompanyOnline(item.id, item.is_online)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={item.is_online ? 'radio-button-on' : 'radio-button-off'}
+                      size={16}
+                      color={item.is_online ? theme.success : theme.textTertiary}
+                    />
+                    <Text style={[styles.statusText, { color: item.is_online ? theme.success : theme.textTertiary }]}>
+                      {item.is_online ? 'Online' : 'Offline'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.statusBadge,
+                      { backgroundColor: item.is_blocked ? theme.error + '20' : theme.warning + '20' },
+                    ]}
+                    onPress={() => toggleCompanyBlock(item.id, item.is_blocked)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={item.is_blocked ? 'lock-closed' : 'lock-open'}
+                      size={16}
+                      color={item.is_blocked ? theme.error : theme.warning}
+                    />
+                    <Text style={[styles.statusText, { color: item.is_blocked ? theme.error : theme.warning }]}>
+                      {item.is_blocked ? 'Blocked' : 'Active'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Card>
+          )}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.usersList}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="business-outline" size={64} color={theme.textTertiary} />
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                Firmalar topilmadi
               </Text>
             </View>
           }
@@ -698,26 +1150,37 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   mainTabsContainer: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
   mainTab: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
     paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1.5,
     backgroundColor: 'transparent',
     borderColor: '#E5E7EB',
+    minWidth: 100,
   },
   mainTabText: {
-    ...typography.bodyMedium,
+    ...typography.small,
     fontWeight: '600',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs / 2,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: borderRadius.sm,
+  },
+  statusText: {
+    ...typography.small,
+    fontWeight: '600',
+    fontSize: 11,
   },
   configCard: {
     marginBottom: spacing.md,
