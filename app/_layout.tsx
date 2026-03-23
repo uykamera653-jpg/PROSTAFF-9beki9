@@ -35,6 +35,7 @@ export default function RootLayout() {
                       <Stack.Screen name="post-job" />
                       <Stack.Screen name="worker-search" />
                       <Stack.Screen name="company-detail" />
+                      <Stack.Screen name="order-detail" />
                     </Stack>
                   </WorkersProvider>
                 </ReviewsProvider>

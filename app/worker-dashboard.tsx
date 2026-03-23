@@ -372,65 +372,76 @@ export default function WorkerDashboardScreen() {
   }
 
   const renderOrder = ({ item }: { item: WorkerOrder }) => (
-    <Card style={styles.orderCard}>
-      <View style={styles.orderHeader}>
-        <Text style={[styles.orderTitle, { color: theme.text }]} numberOfLines={1}>
-          {item.title}
-        </Text>
-        <Text style={[styles.orderDate, { color: theme.textSecondary }]}>
-          {new Date(item.created_at).toLocaleDateString('uz-UZ')}
-        </Text>
-      </View>
-
-      <Text style={[styles.orderDescription, { color: theme.textSecondary }]} numberOfLines={2}>
-        {item.description}
-      </Text>
-
-      {item.distance && (
-        <View style={[styles.distanceBadge, { backgroundColor: theme.primary + '15' }]}>
-          <Ionicons name="navigate" size={14} color={theme.primary} />
-          <Text style={[styles.distanceText, { color: theme.primary }]}>
-            {item.distance.toFixed(1)} km yaqin
+    <TouchableOpacity
+      onPress={() => router.push({ pathname: '/order-detail', params: { orderId: item.id } })}
+      activeOpacity={0.7}
+    >
+      <Card style={styles.orderCard}>
+        <View style={styles.orderHeader}>
+          <Text style={[styles.orderTitle, { color: theme.text }]} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <Text style={[styles.orderDate, { color: theme.textSecondary }]}>
+            {new Date(item.created_at).toLocaleDateString('uz-UZ')}
           </Text>
         </View>
-      )}
 
-      <View style={styles.orderInfo}>
-        <View style={styles.orderInfoItem}>
-          <Ionicons name="location" size={16} color={theme.textSecondary} />
-          <Text style={[styles.orderInfoText, { color: theme.textSecondary }]} numberOfLines={1}>
-            {item.location}
-          </Text>
-        </View>
-        {/* Show customer phone only if order is accepted by this worker */}
-        {item.customer_phone && item.worker_id === user?.id && item.status !== 'pending' && (
-          <View style={styles.orderInfoItem}>
-            <Ionicons name="call" size={16} color={theme.success} />
-            <Text style={[styles.orderInfoText, { color: theme.success, fontWeight: '600' }]}>
-              {item.customer_phone}
+        <Text style={[styles.orderDescription, { color: theme.textSecondary }]} numberOfLines={2}>
+          {item.description}
+        </Text>
+
+        {item.distance && (
+          <View style={[styles.distanceBadge, { backgroundColor: theme.primary + '15' }]}>
+            <Ionicons name="navigate" size={14} color={theme.primary} />
+            <Text style={[styles.distanceText, { color: theme.primary }]}>
+              {item.distance.toFixed(1)} km yaqin
             </Text>
           </View>
         )}
-      </View>
 
-      {item.status === 'pending' && (
-        <Button
-          title="Qabul qilish"
-          onPress={() => handleAcceptOrder(item.id)}
-          style={styles.acceptButton}
-        />
-      )}
-      {item.status === 'accepted' && (
-        <View style={styles.actionButtons}>
-          <Button
-            title="Bajarildi"
-            onPress={() => handleCompleteOrder(item.id)}
-            variant="outline"
-            style={styles.actionButton}
-          />
+        <View style={styles.orderInfo}>
+          <View style={styles.orderInfoItem}>
+            <Ionicons name="location" size={16} color={theme.textSecondary} />
+            <Text style={[styles.orderInfoText, { color: theme.textSecondary }]} numberOfLines={1}>
+              {item.location}
+            </Text>
+          </View>
+          {/* Show customer phone only if order is accepted by this worker */}
+          {item.customer_phone && item.worker_id === user?.id && item.status !== 'pending' && (
+            <View style={styles.orderInfoItem}>
+              <Ionicons name="call" size={16} color={theme.success} />
+              <Text style={[styles.orderInfoText, { color: theme.success, fontWeight: '600' }]}>
+                {item.customer_phone}
+              </Text>
+            </View>
+          )}
         </View>
-      )}
-    </Card>
+
+        {item.status === 'pending' && (
+          <Button
+            title="Qabul qilish"
+            onPress={(e: any) => {
+              e?.stopPropagation?.();
+              handleAcceptOrder(item.id);
+            }}
+            style={styles.acceptButton}
+          />
+        )}
+        {item.status === 'accepted' && (
+          <View style={styles.actionButtons}>
+            <Button
+              title="Bajarildi"
+              onPress={(e: any) => {
+                e?.stopPropagation?.();
+                handleCompleteOrder(item.id);
+              }}
+              variant="outline"
+              style={styles.actionButton}
+            />
+          </View>
+        )}
+      </Card>
+    </TouchableOpacity>
   );
 
   return (

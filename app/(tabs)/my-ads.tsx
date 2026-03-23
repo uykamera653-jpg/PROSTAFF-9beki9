@@ -11,6 +11,7 @@ import {
   Linking,
   ActionSheetIOS,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../hooks/useTheme';
@@ -26,6 +27,7 @@ import { spacing, typography, borderRadius } from '../../constants/theme';
 import { JobAd, ServiceOrder } from '../../types';
 
 export default function MyAdsScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { t } = useTranslation();
@@ -92,41 +94,46 @@ export default function MyAdsScreen() {
   };
 
   const renderJobItem = ({ item }: { item: JobAd }) => (
-    <Card style={styles.jobCard}>
-      <View style={styles.jobHeader}>
-        <Text style={[styles.category, { color: theme.primary }]}>
-          {t[item.category as keyof typeof t] as string}
+    <TouchableOpacity
+      onPress={() => router.push({ pathname: '/order-detail', params: { orderId: item.id } })}
+      activeOpacity={0.7}
+    >
+      <Card style={styles.jobCard}>
+        <View style={styles.jobHeader}>
+          <Text style={[styles.category, { color: theme.primary }]}>
+            {t[item.category as keyof typeof t] as string}
+          </Text>
+          <View style={[styles.statusBadge, { backgroundColor: theme.success + '15' }]}>
+            <Text style={[styles.statusText, { color: theme.success }]}>
+              {item.status}
+            </Text>
+          </View>
+        </View>
+        
+        <Text style={[styles.description, { color: theme.text }]} numberOfLines={2}>
+          {item.description}
         </Text>
-        <View style={[styles.statusBadge, { backgroundColor: theme.success + '15' }]}>
-          <Text style={[styles.statusText, { color: theme.success }]}>
-            {item.status}
-          </Text>
+        
+        <View style={styles.jobDetails}>
+          <View style={styles.detailRow}>
+            <Ionicons name="call" size={16} color={theme.textSecondary} />
+            <Text style={[styles.detailText, { color: theme.textSecondary }]}>
+              {item.phoneNumber}
+            </Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Ionicons name="location" size={16} color={theme.textSecondary} />
+            <Text style={[styles.detailText, { color: theme.textSecondary }]} numberOfLines={1}>
+              {item.location}
+            </Text>
+          </View>
         </View>
-      </View>
-      
-      <Text style={[styles.description, { color: theme.text }]} numberOfLines={2}>
-        {item.description}
-      </Text>
-      
-      <View style={styles.jobDetails}>
-        <View style={styles.detailRow}>
-          <Ionicons name="call" size={16} color={theme.textSecondary} />
-          <Text style={[styles.detailText, { color: theme.textSecondary }]}>
-            {item.phoneNumber}
-          </Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Ionicons name="location" size={16} color={theme.textSecondary} />
-          <Text style={[styles.detailText, { color: theme.textSecondary }]} numberOfLines={1}>
-            {item.location}
-          </Text>
-        </View>
-      </View>
-      
-      <Text style={[styles.date, { color: theme.textTertiary }]}>
-        {new Date(item.createdAt).toLocaleDateString()}
-      </Text>
-    </Card>
+        
+        <Text style={[styles.date, { color: theme.textTertiary }]}>
+          {new Date(item.createdAt).toLocaleDateString()}
+        </Text>
+      </Card>
+    </TouchableOpacity>
   );
 
   const renderOrderItem = ({ item }: { item: ServiceOrder }) => (
