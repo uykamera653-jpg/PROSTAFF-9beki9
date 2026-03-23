@@ -270,11 +270,32 @@ export default function IndexScreen() {
         if (error) {
           setError(error.message);
         } else if (data.user) {
-          // User registered successfully - auto login
-          if (Platform.OS === 'web') {
-            alert('Ro\'yxatdan o\'tdingiz!');
+          // Check if email confirmation is required
+          if (data.session) {
+            // Email confirmation disabled - user is auto-logged in
+            console.log('✅ Registration successful with auto-login');
+            // Navigation handled by AuthContext
           } else {
-            Alert.alert('Muvaffaqiyatli', 'Ro\'yxatdan o\'tdingiz!');
+            // Email confirmation required
+            // Auto-login after registration
+            console.log('🔄 Registration successful, auto-logging in...');
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+              email: email.trim(),
+              password: password,
+            });
+            
+            if (signInError) {
+              // If can't auto-login, show message and switch to login tab
+              if (Platform.OS === 'web') {
+                alert('Ro\'yxatdan o\'tdingiz! Iltimos, kirish tugmasini bosing.');
+              } else {
+                Alert.alert('Ro\'yxatdan o\'tdingiz!', 'Iltimos, kirish tugmasini bosing.');
+              }
+              setIsSignUp(false);
+            } else {
+              console.log('✅ Auto-login successful');
+              // Navigation handled by AuthContext
+            }
           }
         }
       } else {
@@ -286,6 +307,9 @@ export default function IndexScreen() {
 
         if (error) {
           setError(error.message);
+        } else {
+          console.log('✅ Login successful');
+          // Navigation handled by AuthContext
         }
       }
     } catch (err: any) {
