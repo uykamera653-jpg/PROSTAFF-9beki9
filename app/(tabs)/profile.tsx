@@ -10,6 +10,7 @@ import { useSettings } from '../../hooks/useSettings';
 import { useJobs } from '../../hooks/useJobs';
 import { useCompanies } from '../../hooks/useCompanies';
 import { useUserRole } from '../../hooks/useUserRole';
+import { useNotificationSettings } from '../../hooks/useNotificationSettings';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -38,6 +39,10 @@ export default function ProfileScreen() {
   const [newName, setNewName] = useState(user?.name || '');
   const [hasCompanyProfile, setHasCompanyProfile] = useState(false);
   const [isCheckingProfile, setIsCheckingProfile] = useState(false);
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+  
+  // Notification settings
+  const { settings: notifSettings, loading: notifLoading, updateSettings } = useNotificationSettings();
 
   // Auto-refresh role and check company profile when screen is focused
   useEffect(() => {
@@ -228,6 +233,16 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={[styles.menuItem, { backgroundColor: theme.surface }]}
+            onPress={() => setShowNotificationSettings(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="notifications-outline" size={24} color={theme.text} />
+            <Text style={[styles.menuText, { color: theme.text }]}>Bildirishnomalar</Text>
+            <Ionicons name="chevron-forward" size={24} color={theme.textTertiary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuItem, { backgroundColor: theme.surface }]}
             onPress={handleHelpSupport}
             activeOpacity={0.7}
           >
@@ -266,6 +281,128 @@ export default function ProfileScreen() {
               <Button title={t.cancel} onPress={() => setShowNameModal(false)} variant="outline" />
               <Button title={t.save} onPress={handleSaveName} />
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Notification Settings Modal */}
+      <Modal visible={showNotificationSettings} transparent animationType="fade" onRequestClose={() => setShowNotificationSettings(false)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalOverlayTouch} 
+            activeOpacity={1} 
+            onPress={() => setShowNotificationSettings(false)}
+          />
+          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Bildirishnoma sozlamalari</Text>
+            
+            <View style={styles.notifSection}>
+              <TouchableOpacity
+                style={[styles.notifItem, { borderBottomColor: theme.border }]}
+                onPress={() => updateSettings({ enabled: !notifSettings.enabled })}
+                activeOpacity={0.7}
+                disabled={notifLoading}
+              >
+                <View style={styles.notifInfo}>
+                  <Ionicons name="notifications" size={20} color={theme.text} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.notifLabel, { color: theme.text }]}>Bildirishnomalar</Text>
+                    <Text style={[styles.notifDesc, { color: theme.textSecondary }]}>
+                      Barcha bildirishnomalarni yoqish/o'chirish
+                    </Text>
+                  </View>
+                </View>
+                <View style={[styles.switch, { backgroundColor: notifSettings.enabled ? theme.primary : theme.border }]}>
+                  <View style={[styles.switchThumb, { transform: [{ translateX: notifSettings.enabled ? 20 : 2 }] }]} />
+                </View>
+              </TouchableOpacity>
+
+              {notifSettings.enabled && (
+                <>
+                  <TouchableOpacity
+                    style={[styles.notifItem, { borderBottomColor: theme.border }]}
+                    onPress={() => updateSettings({ new_orders: !notifSettings.new_orders })}
+                    activeOpacity={0.7}
+                    disabled={notifLoading}
+                  >
+                    <View style={styles.notifInfo}>
+                      <Ionicons name="briefcase" size={20} color={theme.text} />
+                      <Text style={[styles.notifLabel, { color: theme.text }]}>Yangi buyurtmalar</Text>
+                    </View>
+                    <View style={[styles.switch, { backgroundColor: notifSettings.new_orders ? theme.primary : theme.border }]}>
+                      <View style={[styles.switchThumb, { transform: [{ translateX: notifSettings.new_orders ? 20 : 2 }] }]} />
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.notifItem, { borderBottomColor: theme.border }]}
+                    onPress={() => updateSettings({ order_updates: !notifSettings.order_updates })}
+                    activeOpacity={0.7}
+                    disabled={notifLoading}
+                  >
+                    <View style={styles.notifInfo}>
+                      <Ionicons name="refresh" size={20} color={theme.text} />
+                      <Text style={[styles.notifLabel, { color: theme.text }]}>Buyurtma yangilanishlari</Text>
+                    </View>
+                    <View style={[styles.switch, { backgroundColor: notifSettings.order_updates ? theme.primary : theme.border }]}>
+                      <View style={[styles.switchThumb, { transform: [{ translateX: notifSettings.order_updates ? 20 : 2 }] }]} />
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.notifItem, { borderBottomColor: theme.border }]}
+                    onPress={() => updateSettings({ messages: !notifSettings.messages })}
+                    activeOpacity={0.7}
+                    disabled={notifLoading}
+                  >
+                    <View style={styles.notifInfo}>
+                      <Ionicons name="chatbubble" size={20} color={theme.text} />
+                      <Text style={[styles.notifLabel, { color: theme.text }]}>Xabarlar</Text>
+                    </View>
+                    <View style={[styles.switch, { backgroundColor: notifSettings.messages ? theme.primary : theme.border }]}>
+                      <View style={[styles.switchThumb, { transform: [{ translateX: notifSettings.messages ? 20 : 2 }] }]} />
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.notifItem, { borderBottomColor: theme.border }]}
+                    onPress={() => updateSettings({ sound: !notifSettings.sound })}
+                    activeOpacity={0.7}
+                    disabled={notifLoading}
+                  >
+                    <View style={styles.notifInfo}>
+                      <Ionicons name="volume-high" size={20} color={theme.text} />
+                      <Text style={[styles.notifLabel, { color: theme.text }]}>Ovoz</Text>
+                    </View>
+                    <View style={[styles.switch, { backgroundColor: notifSettings.sound ? theme.primary : theme.border }]}>
+                      <View style={[styles.switchThumb, { transform: [{ translateX: notifSettings.sound ? 20 : 2 }] }]} />
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.notifItem, { borderBottomColor: 'transparent' }]}
+                    onPress={() => updateSettings({ vibration: !notifSettings.vibration })}
+                    activeOpacity={0.7}
+                    disabled={notifLoading}
+                  >
+                    <View style={styles.notifInfo}>
+                      <Ionicons name="phone-portrait" size={20} color={theme.text} />
+                      <Text style={[styles.notifLabel, { color: theme.text }]}>Tebranish</Text>
+                    </View>
+                    <View style={[styles.switch, { backgroundColor: notifSettings.vibration ? theme.primary : theme.border }]}>
+                      <View style={[styles.switchThumb, { transform: [{ translateX: notifSettings.vibration ? 20 : 2 }] }]} />
+                    </View>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+
+            <Button 
+              title="Yopish" 
+              onPress={() => setShowNotificationSettings(false)} 
+              variant="outline" 
+              style={styles.modalCancelButton} 
+            />
           </View>
         </View>
       </Modal>
@@ -445,5 +582,29 @@ const styles = StyleSheet.create({
   debugText: {
     ...typography.small,
     fontStyle: 'italic',
+  },
+  notifSection: {
+    marginBottom: spacing.lg,
+  },
+  notifItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+  },
+  notifInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  notifLabel: {
+    ...typography.bodyMedium,
+    fontWeight: '500',
+  },
+  notifDesc: {
+    ...typography.small,
+    marginTop: spacing.xs / 2,
   },
 });
