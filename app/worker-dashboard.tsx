@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../hooks/useAuth';
+import { useUserRole } from '../hooks/useUserRole';
 import { useNotifications } from '../hooks/useNotifications';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -63,6 +64,7 @@ export default function WorkerDashboardScreen() {
   const { theme } = useTheme();
   const { t } = useTranslation();
   const { user, logout } = useAuth();
+  const { role, isLoading: roleLoading } = useUserRole();
 
   const [selectedTab, setSelectedTab] = useState<OrderStatus>('pending');
   const [orders, setOrders] = useState<WorkerOrder[]>([]);
@@ -91,12 +93,20 @@ export default function WorkerDashboardScreen() {
     return R * c;
   };
 
+  // Check role and redirect if not worker
+  useEffect(() => {
+    if (!roleLoading && role && role !== 'worker') {
+      console.log('⚠️ Access denied: User role is', role, 'not worker');
+      router.replace(role === 'customer' ? '/(tabs)/home' : role === 'company' ? '/company-dashboard' : '/admin-panel');
+    }
+  }, [role, roleLoading]);
+
   // Check worker profile and get location on mount
   useEffect(() => {
-    if (user) {
+    if (user && !roleLoading && role === 'worker') {
       checkWorkerProfile();
     }
-  }, [user]);
+  }, [user, role, roleLoading]);
 
   // 30-second timer for pending orders
   useEffect(() => {
@@ -411,7 +421,7 @@ export default function WorkerDashboardScreen() {
     router.replace('/');
   };
 
-  if (loading) {
+  if (loading || roleLoading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.loadingContainer}>
@@ -419,6 +429,25 @@ export default function WorkerDashboardScreen() {
           <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
             Yuklanmoqda...
           </Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Show access denied if not worker
+  if (role && role !== 'worker') {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <View style={styles.loadingContainer}>
+          <Ionicons name="warning" size={64} color={theme.warning} />
+          <Text style={[styles.loadingText, { color: theme.text, marginTop: spacing.lg }]}>
+            Bu sahifaga kirish uchun ishchi profili kerak
+          </Text>
+          <Button
+            title="Ortga qaytish"
+            onPress={() => router.back()}
+            style={{ marginTop: spacing.lg }}
+          />
         </View>
       </View>
     );

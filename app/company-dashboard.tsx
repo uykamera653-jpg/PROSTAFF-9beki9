@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../hooks/useAuth';
+import { useUserRole } from '../hooks/useUserRole';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { spacing, typography, borderRadius } from '../constants/theme';
@@ -36,6 +38,7 @@ export default function CompanyDashboardScreen() {
   const { theme } = useTheme();
   const { t } = useTranslation();
   const { user, logout } = useAuth();
+  const { role, isLoading: roleLoading } = useUserRole();
 
   const [selectedTab, setSelectedTab] = useState<OrderStatus>('pending');
   
@@ -63,6 +66,14 @@ export default function CompanyDashboardScreen() {
     },
   ]);
 
+  // Check role and redirect if not company
+  useEffect(() => {
+    if (!roleLoading && role && role !== 'company') {
+      console.log('⚠️ Access denied: User role is', role, 'not company');
+      router.replace(role === 'customer' ? '/(tabs)/home' : role === 'worker' ? '/worker-dashboard' : '/admin-panel');
+    }
+  }, [role, roleLoading]);
+
   const handleLogout = async () => {
     await logout();
     router.replace('/');
@@ -74,6 +85,38 @@ export default function CompanyDashboardScreen() {
     console.log('Confirm order:', orderId);
     // TODO: Update order status in Supabase
   };
+
+  if (roleLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+            Yuklanmoqda...
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Show access denied if not company
+  if (role && role !== 'company') {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <View style={styles.loadingContainer}>
+          <Ionicons name="warning" size={64} color={theme.warning} />
+          <Text style={[styles.loadingText, { color: theme.text, marginTop: spacing.lg }]}>
+            Bu sahifaga kirish uchun firma profili kerak
+          </Text>
+          <Button
+            title="Ortga qaytish"
+            onPress={() => router.back()}
+            style={{ marginTop: spacing.lg }}
+          />
+        </View>
+      </View>
+    );
+  }
 
   const renderOrder = ({ item }: { item: CompanyOrder }) => (
     <Card style={styles.orderCard}>
@@ -350,6 +393,15 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   emptyText: {
+    ...typography.body,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  loadingText: {
     ...typography.body,
   },
 });
