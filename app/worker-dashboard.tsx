@@ -21,6 +21,7 @@ import { useNotifications } from '../hooks/useNotifications';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useAlert } from '../components/ui/WebAlert';
+import { LocationPicker } from '../components/feature/LocationPicker';
 import { spacing, typography, borderRadius } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 
@@ -70,6 +71,8 @@ export default function WorkerDashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [workerLocation, setWorkerLocation] = useState<WorkerLocation | null>(null);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [orderTimers, setOrderTimers] = useState<{ [orderId: string]: number }>({});
   const { showAlert, AlertComponent } = useAlert();
   
   // Push notifications
@@ -92,26 +95,35 @@ export default function WorkerDashboardScreen() {
   useEffect(() => {
     if (user) {
       checkWorkerProfile();
-      getCurrentLocation();
     }
   }, [user]);
 
-  const getCurrentLocation = async () => {
-    try {
-      // For web/development, use default location (Tashkent)
-      // In production, use expo-location to get actual GPS
-      if (Platform.OS === 'web') {
-        setWorkerLocation({ latitude: 41.2995, longitude: 69.2401 });
-      } else {
-        // For mobile, you can add expo-location here
-        // For now, use default
-        setWorkerLocation({ latitude: 41.2995, longitude: 69.2401 });
-      }
-    } catch (error) {
-      console.error('Failed to get location:', error);
-      setWorkerLocation({ latitude: 41.2995, longitude: 69.2401 });
-    }
-  };
+  // 30-second timer for pending orders
+  useEffect(() => {
+    if (selectedTab !== 'pending' || orders.length === 0) return;
+
+    const interval = setInterval(() => {
+      setOrderTimers((prev) => {
+        const updated = { ...prev };
+        orders.forEach((order) => {
+          const orderId = order.id;
+          const createdAt = new Date(order.created_at).getTime();
+          const now = Date.now();
+          const elapsed = Math.floor((now - createdAt) / 1000);
+          const remaining = Math.max(0, 30 - elapsed);
+          updated[orderId] = remaining;
+
+          // Auto-reject when timer expires
+          if (remaining === 0 && prev[orderId] !== 0) {
+            handleRejectOrder(orderId, true); // silent reject
+          }
+        });
+        return updated;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [selectedTab, orders]);
 
   useEffect(() => {
     if (workerProfile) {
@@ -144,6 +156,11 @@ export default function WorkerDashboardScreen() {
       if (data) {
         setWorkerProfile(data);
         setIsOnline(data.is_online);
+        
+        // Load worker location
+        if (data.latitude && data.longitude) {
+          setWorkerLocation({ latitude: data.latitude, longitude: data.longitude });
+        }
       }
     } catch (error: any) {
       console.error('Failed to check worker profile:', error);
@@ -300,7 +317,8 @@ export default function WorkerDashboardScreen() {
           status: 'accepted',
           worker_id: user.id,
         })
-        .eq('id', orderId);
+        .eq('id', orderId)
+        .eq('status', 'pending'); // Only accept if still pending
 
       if (error) throw error;
 
@@ -309,6 +327,41 @@ export default function WorkerDashboardScreen() {
     } catch (error: any) {
       console.error('❌ Failed to accept order:', error);
       showAlert('Xatolik', 'Buyurtmani qabul qilishda xatolik');
+    }
+  };
+
+  const handleRejectOrder = async (orderId: string, silent = false) => {
+    if (!user) return;
+
+    try {
+      // Add worker ID to rejected_by array
+      const { data: order } = await supabase
+        .from('orders')
+        .select('rejected_by')
+        .eq('id', orderId)
+        .single();
+
+      const rejectedBy = order?.rejected_by || [];
+      if (!rejectedBy.includes(user.id)) {
+        rejectedBy.push(user.id);
+      }
+
+      const { error } = await supabase
+        .from('orders')
+        .update({ rejected_by: rejectedBy })
+        .eq('id', orderId);
+
+      if (error) throw error;
+
+      if (!silent) {
+        showAlert('Rad etildi', 'Buyurtma rad etildi');
+      }
+      loadOrders();
+    } catch (error: any) {
+      console.error('❌ Failed to reject order:', error);
+      if (!silent) {
+        showAlert('Xatolik', 'Buyurtmani rad etishda xatolik');
+      }
     }
   };
 
@@ -371,78 +424,105 @@ export default function WorkerDashboardScreen() {
     );
   }
 
-  const renderOrder = ({ item }: { item: WorkerOrder }) => (
-    <TouchableOpacity
-      onPress={() => router.push({ pathname: '/order-detail', params: { orderId: item.id } })}
-      activeOpacity={0.7}
-    >
-      <Card style={styles.orderCard}>
-        <View style={styles.orderHeader}>
-          <Text style={[styles.orderTitle, { color: theme.text }]} numberOfLines={1}>
-            {item.title}
-          </Text>
-          <Text style={[styles.orderDate, { color: theme.textSecondary }]}>
-            {new Date(item.created_at).toLocaleDateString('uz-UZ')}
-          </Text>
-        </View>
+  const renderOrder = ({ item }: { item: WorkerOrder }) => {
+    const timeRemaining = orderTimers[item.id] || 0;
+    const minutes = Math.floor(timeRemaining / 60);
+    const seconds = timeRemaining % 60;
 
-        <Text style={[styles.orderDescription, { color: theme.textSecondary }]} numberOfLines={2}>
-          {item.description}
-        </Text>
-
-        {item.distance && (
-          <View style={[styles.distanceBadge, { backgroundColor: theme.primary + '15' }]}>
-            <Ionicons name="navigate" size={14} color={theme.primary} />
-            <Text style={[styles.distanceText, { color: theme.primary }]}>
-              {item.distance.toFixed(1)} km yaqin
+    return (
+      <TouchableOpacity
+        onPress={() => router.push({ pathname: '/order-detail', params: { orderId: item.id } })}
+        activeOpacity={0.7}
+      >
+        <Card style={styles.orderCard}>
+          <View style={styles.orderHeader}>
+            <Text style={[styles.orderTitle, { color: theme.text }]} numberOfLines={1}>
+              {item.title}
+            </Text>
+            <Text style={[styles.orderDate, { color: theme.textSecondary }]}>
+              {new Date(item.created_at).toLocaleDateString('uz-UZ')}
             </Text>
           </View>
-        )}
 
-        <View style={styles.orderInfo}>
-          <View style={styles.orderInfoItem}>
-            <Ionicons name="location" size={16} color={theme.textSecondary} />
-            <Text style={[styles.orderInfoText, { color: theme.textSecondary }]} numberOfLines={1}>
-              {item.location}
-            </Text>
-          </View>
-          {/* Show customer phone only if order is accepted by this worker */}
-          {item.customer_phone && item.worker_id === user?.id && item.status !== 'pending' && (
-            <View style={styles.orderInfoItem}>
-              <Ionicons name="call" size={16} color={theme.success} />
-              <Text style={[styles.orderInfoText, { color: theme.success, fontWeight: '600' }]}>
-                {item.customer_phone}
+          <Text style={[styles.orderDescription, { color: theme.textSecondary }]} numberOfLines={2}>
+            {item.description}
+          </Text>
+
+          {item.distance && (
+            <View style={[styles.distanceBadge, { backgroundColor: theme.primary + '15' }]}>
+              <Ionicons name="navigate" size={14} color={theme.primary} />
+              <Text style={[styles.distanceText, { color: theme.primary }]}>
+                {item.distance.toFixed(1)} km yaqin
               </Text>
             </View>
           )}
-        </View>
 
-        {item.status === 'pending' && (
-          <Button
-            title="Qabul qilish"
-            onPress={(e: any) => {
-              e?.stopPropagation?.();
-              handleAcceptOrder(item.id);
-            }}
-            style={styles.acceptButton}
-          />
-        )}
-        {item.status === 'accepted' && (
-          <View style={styles.actionButtons}>
-            <Button
-              title="Bajarildi"
-              onPress={(e: any) => {
-                e?.stopPropagation?.();
-                handleCompleteOrder(item.id);
-              }}
-              variant="outline"
-              style={styles.actionButton}
-            />
+          <View style={styles.orderInfo}>
+            <View style={styles.orderInfoItem}>
+              <Ionicons name="location" size={16} color={theme.textSecondary} />
+              <Text style={[styles.orderInfoText, { color: theme.textSecondary }]} numberOfLines={1}>
+                {item.location}
+              </Text>
+            </View>
+            {/* Show customer phone only if order is accepted by this worker */}
+            {item.customer_phone && item.worker_id === user?.id && item.status !== 'pending' && (
+              <View style={styles.orderInfoItem}>
+                <Ionicons name="call" size={16} color={theme.success} />
+                <Text style={[styles.orderInfoText, { color: theme.success, fontWeight: '600' }]}>
+                  {item.customer_phone}
+                </Text>
+              </View>
+            )}
           </View>
-        )}
-      </Card>
-    </TouchableOpacity>
-  );
+
+          {item.status === 'pending' && (
+            <>
+              {timeRemaining > 0 && (
+                <View style={[styles.timerBadge, { backgroundColor: theme.warning + '15' }]}>
+                  <Ionicons name="timer" size={16} color={theme.warning} />
+                  <Text style={[styles.timerText, { color: theme.warning }]}>
+                    {minutes}:{seconds.toString().padStart(2, '0')}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.actionButtons}>
+                <Button
+                  title="Rad etish"
+                  onPress={(e: any) => {
+                    e?.stopPropagation?.();
+                    handleRejectOrder(item.id);
+                  }}
+                  variant="outline"
+                  style={styles.actionButton}
+                />
+                <Button
+                  title="Qabul qilish"
+                  onPress={(e: any) => {
+                    e?.stopPropagation?.();
+                    handleAcceptOrder(item.id);
+                  }}
+                  style={styles.actionButton}
+                />
+              </View>
+            </>
+          )}
+          {item.status === 'accepted' && (
+            <View style={styles.actionButtons}>
+              <Button
+                title="Bajarildi"
+                onPress={(e: any) => {
+                  e?.stopPropagation?.();
+                  handleCompleteOrder(item.id);
+                }}
+                variant="outline"
+                style={styles.actionButton}
+              />
+            </View>
+          )}
+        </Card>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -456,7 +536,30 @@ export default function WorkerDashboardScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Location Status */}
       <View style={styles.onlineContainer}>
+        {!workerLocation ? (
+          <Card style={[styles.warningCard, { backgroundColor: theme.warning + '15' }]}>
+            <View style={styles.warningRow}>
+              <Ionicons name="warning" size={24} color={theme.warning} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.warningTitle, { color: theme.warning }]}>
+                  Joylashuv belgilanmagan
+                </Text>
+                <Text style={[styles.warningText, { color: theme.textSecondary }]}>
+                  Buyurtmalar olish uchun joylashuvingizni belgilang
+                </Text>
+              </View>
+              <Button
+                title="Belgilash"
+                onPress={() => setShowLocationPicker(true)}
+                variant="outline"
+                style={{ paddingHorizontal: spacing.md }}
+              />
+            </View>
+          </Card>
+        ) : null}
+
         <Card style={styles.onlineCard}>
           <View style={styles.onlineRow}>
             <View style={styles.onlineInfo}>
@@ -595,6 +698,34 @@ export default function WorkerDashboardScreen() {
           }
         />
       )}
+
+      {/* Location Picker Modal */}
+      <LocationPicker
+        visible={showLocationPicker}
+        onClose={() => setShowLocationPicker(false)}
+        onLocationSelect={async (coords) => {
+          if (!user?.id) return;
+          try {
+            const { error } = await supabase
+              .from('workers')
+              .update({
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+                location_updated_at: new Date().toISOString(),
+              })
+              .eq('id', user.id);
+
+            if (error) throw error;
+            setWorkerLocation(coords);
+            showAlert('Muvaffaqiyatli!', 'Joylashuv saqlandi');
+          } catch (error: any) {
+            console.error('Failed to update location:', error);
+            showAlert('Xatolik', 'Joylashuvni saqlashda xatolik');
+          }
+        }}
+        initialLocation={workerLocation || undefined}
+      />
+
       <AlertComponent />
     </View>
   );
@@ -777,5 +908,36 @@ const styles = StyleSheet.create({
   distanceText: {
     ...typography.small,
     fontWeight: '600',
+  },
+  warningCard: {
+    marginBottom: spacing.sm,
+  },
+  warningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  warningTitle: {
+    ...typography.bodyMedium,
+    fontWeight: '600',
+    marginBottom: spacing.xs / 2,
+  },
+  warningText: {
+    ...typography.small,
+  },
+  timerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs / 2,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: borderRadius.sm,
+    marginBottom: spacing.sm,
+  },
+  timerText: {
+    ...typography.small,
+    fontWeight: '700',
+    fontFamily: Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' }),
   },
 });

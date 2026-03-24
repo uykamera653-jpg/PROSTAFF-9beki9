@@ -19,6 +19,7 @@ import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { useAlert } from '../components/ui/WebAlert';
+import { LocationPicker } from '../components/feature/LocationPicker';
 import { spacing, typography, borderRadius } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 
@@ -46,6 +47,10 @@ export default function WorkerOnboardingScreen() {
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [location, setLocation] = useState('');
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
   const { showAlert, AlertComponent } = useAlert();
 
   useEffect(() => {
@@ -95,6 +100,11 @@ export default function WorkerOnboardingScreen() {
         setPhone(worker.phone || '');
         setMinPrice(worker.min_price?.toString() || '200000');
         setMaxPrice(worker.max_price?.toString() || '300000');
+        setLatitude(worker.latitude || null);
+        setLongitude(worker.longitude || null);
+        if (worker.latitude && worker.longitude) {
+          setLocation(`${worker.latitude.toFixed(6)}, ${worker.longitude.toFixed(6)}`);
+        }
 
         // Load worker categories
         const { data: workerCats, error: catsError } = await supabase
@@ -136,6 +146,10 @@ export default function WorkerOnboardingScreen() {
       showAlert('Xatolik', 'Kamida bitta kategoriya tanlang');
       return;
     }
+    if (!latitude || !longitude) {
+      showAlert('Xatolik', 'Iltimos joylashuvingizni tanlang');
+      return;
+    }
     if (!user) return;
 
     try {
@@ -158,7 +172,9 @@ export default function WorkerOnboardingScreen() {
             phone: phone.trim(),
             min_price: parseFloat(minPrice) || 200000,
             max_price: parseFloat(maxPrice) || 300000,
-            is_online: true,
+            latitude,
+            longitude,
+            location_updated_at: new Date().toISOString(),
           })
           .eq('id', user.id);
 
@@ -173,7 +189,10 @@ export default function WorkerOnboardingScreen() {
             phone: phone.trim(),
             min_price: parseFloat(minPrice) || 200000,
             max_price: parseFloat(maxPrice) || 300000,
-            is_online: true,
+            is_online: false,
+            latitude,
+            longitude,
+            location_updated_at: new Date().toISOString(),
           });
 
         if (workerError) throw workerError;
@@ -292,6 +311,45 @@ export default function WorkerOnboardingScreen() {
 
         <Card style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            Joylashuv
+          </Text>
+          <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
+            Siz qayerda turibsiz? (Sizga yaqin buyurtmalar yuboriladi)
+          </Text>
+          
+          <TouchableOpacity
+            style={[
+              styles.locationButton,
+              { backgroundColor: theme.surfaceVariant, borderColor: theme.border },
+            ]}
+            onPress={() => setShowLocationPicker(true)}
+            disabled={loading}
+          >
+            {location && latitude && longitude ? (
+              <View style={styles.selectedLocation}>
+                <Ionicons name="location" size={24} color={theme.success} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.selectedLocationText, { color: theme.text }]} numberOfLines={2}>
+                    {location}
+                  </Text>
+                  <Text style={[styles.coordinates, { color: theme.textTertiary }]}>
+                    {latitude.toFixed(6)}, {longitude.toFixed(6)}
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <>
+                <Ionicons name="location-outline" size={32} color={theme.textTertiary} />
+                <Text style={[styles.locationPlaceholder, { color: theme.textSecondary }]}>
+                  Joylashuvni tanlang
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </Card>
+
+        <Card style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
             Xizmat ko'rsatish kategoriyalari
           </Text>
           <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
@@ -352,6 +410,19 @@ export default function WorkerOnboardingScreen() {
 
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
+
+      {/* Location Picker Modal */}
+      <LocationPicker
+        visible={showLocationPicker}
+        onClose={() => setShowLocationPicker(false)}
+        onLocationSelect={(coords, address) => {
+          setLocation(address);
+          setLatitude(coords.latitude);
+          setLongitude(coords.longitude);
+        }}
+        initialLocation={latitude && longitude ? { latitude, longitude } : undefined}
+      />
+
       <AlertComponent />
     </View>
   );
@@ -441,5 +512,32 @@ const styles = StyleSheet.create({
   },
   completeButton: {
     marginTop: spacing.md,
+  },
+  locationButton: {
+    borderRadius: borderRadius.md,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    padding: spacing.md,
+    minHeight: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  selectedLocation: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    width: '100%',
+  },
+  selectedLocationText: {
+    ...typography.body,
+    marginBottom: spacing.xs,
+  },
+  locationPlaceholder: {
+    ...typography.bodyMedium,
+  },
+  coordinates: {
+    ...typography.caption,
+    fontFamily: Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' }),
   },
 });

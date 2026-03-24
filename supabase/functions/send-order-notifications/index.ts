@@ -39,22 +39,25 @@ serve(async (req) => {
     const payload: OrderNotificationPayload = await req.json();
     console.log('📨 Sending notifications for order:', payload.orderId);
 
-    // Get category ID
-    const { data: categoryData, error: catError } = await supabaseAdmin
-      .from('categories')
-      .select('id')
-      .ilike('name_uz', `%${payload.category}%`)
+    // Get order details including rejected_by
+    const { data: orderData, error: orderError } = await supabaseAdmin
+      .from('orders')
+      .select('category_id, rejected_by')
+      .eq('id', payload.orderId)
       .single();
 
-    if (catError) {
-      throw new Error(`Category not found: ${catError.message}`);
+    if (orderError) {
+      throw new Error(`Order not found: ${orderError.message}`);
     }
+
+    const rejectedWorkerIds = orderData.rejected_by || [];
+    console.log(`🚫 Rejected by ${rejectedWorkerIds.length} workers`);
 
     // Get workers in this category
     const { data: workerCategories, error: wcError } = await supabaseAdmin
       .from('worker_categories')
       .select('worker_id')
-      .eq('category_id', categoryData.id);
+      .eq('category_id', orderData.category_id);
 
     if (wcError) {
       throw new Error(`Failed to get worker categories: ${wcError.message}`);
@@ -70,19 +73,37 @@ serve(async (req) => {
       );
     }
 
-    // Get online workers with push tokens
+    // Get online workers with location who haven't rejected this order
     const { data: workers, error: workersError } = await supabaseAdmin
       .from('workers')
-      .select('id')
+      .select('id, latitude, longitude')
       .in('id', workerIds)
-      .eq('is_online', true);
+      .eq('is_online', true)
+      .not('latitude', 'is', null)
+      .not('longitude', 'is', null);
 
     if (workersError) {
       throw new Error(`Failed to get workers: ${workersError.message}`);
     }
 
-    const onlineWorkerIds = workers.map(w => w.id);
-    console.log(`🟢 ${onlineWorkerIds.length} online workers`);
+    // Filter out rejected workers and calculate distances
+    const MAX_DISTANCE_KM = 10;
+    const nearbyWorkers = workers
+      .filter(w => !rejectedWorkerIds.includes(w.id))
+      .map(w => {
+        const distance = calculateDistance(
+          payload.latitude,
+          payload.longitude,
+          w.latitude!,
+          w.longitude!
+        );
+        return { ...w, distance };
+      })
+      .filter(w => w.distance <= MAX_DISTANCE_KM)
+      .sort((a, b) => a.distance - b.distance);
+
+    const onlineWorkerIds = nearbyWorkers.map(w => w.id);
+    console.log(`🟢 ${onlineWorkerIds.length} online workers within ${MAX_DISTANCE_KM}km`);
 
     if (onlineWorkerIds.length === 0) {
       return new Response(
@@ -110,22 +131,17 @@ serve(async (req) => {
       );
     }
 
-    // Calculate distance and filter nearby workers (within 10km)
-    const MAX_DISTANCE_KM = 10;
-    const nearbyTokens = tokens.filter(token => {
-      // For now, send to all online workers
-      // In production, you'd calculate actual distance based on worker's last known location
-      return true;
-    });
-
-    console.log(`📍 ${nearbyTokens.length} nearby workers`);
-
     // Send push notifications via Expo Push API
-    const messages = nearbyTokens.map(token => ({
-      to: token.token,
-      sound: 'default', // ✅ iOS and Android default sound
-      title: `🔔 Yangi buyurtma: ${payload.category}`,
-      body: `📍 ${payload.location}\n${payload.description.substring(0, 100)}`,
+    const messages = tokens.map(token => {
+      // Find worker distance
+      const worker = nearbyWorkers.find(w => w.id === token.user_id);
+      const distance = worker ? ` (${worker.distance.toFixed(1)}km)` : '';
+
+      return {
+        to: token.token,
+        sound: 'default',
+        title: `🔔 Yangi buyurtma${distance}`,
+        body: `📍 ${payload.location}\n${payload.description.substring(0, 100)}`,
       data: {
         orderId: payload.orderId,
         category: payload.category,
@@ -150,7 +166,8 @@ serve(async (req) => {
         badge: 1,
         priority: 'high',
       },
-    }));
+      };
+    });
 
     // Send to Expo Push Notification service
     const expoPushUrl = 'https://exp.host/--/api/v2/push/send';
