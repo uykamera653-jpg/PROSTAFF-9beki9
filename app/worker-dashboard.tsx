@@ -506,7 +506,7 @@ export default function WorkerDashboardScreen() {
               </View>
             </>
           )}
-          {item.status === 'accepted' && (
+          {(item.status === 'accepted' || item.status === 'in_progress') && (
             <View style={styles.actionButtons}>
               <Button
                 title="Bajarildi"
