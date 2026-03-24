@@ -240,12 +240,26 @@ export default function WorkerDashboardScreen() {
         throw error;
       }
       
-      console.log('✅ Loaded orders:', data?.length || 0);
+      console.log('✅ Loaded orders (before filter):', data?.length || 0);
+      
+      // Filter out rejected orders for pending tab
+      let filteredData = data || [];
+      if (selectedTab === 'pending' && data) {
+        filteredData = data.filter(order => {
+          const rejectedBy = Array.isArray(order.rejected_by) ? order.rejected_by : [];
+          const isRejected = rejectedBy.includes(user.id);
+          if (isRejected) {
+            console.log('🚫 Filtering out rejected order:', order.id);
+          }
+          return !isRejected;
+        });
+        console.log('✅ Filtered orders (after removing rejected):', filteredData.length);
+      }
       
       // Calculate distance for pending orders if worker location available
-      let processedOrders = data || [];
-      if (selectedTab === 'pending' && workerLocation && data) {
-        processedOrders = data
+      let processedOrders = filteredData;
+      if (selectedTab === 'pending' && workerLocation && filteredData.length > 0) {
+        processedOrders = filteredData
           .map(order => {
             if (order.latitude && order.longitude) {
               const distance = calculateDistance(
@@ -411,6 +425,25 @@ export default function WorkerDashboardScreen() {
     if (!user) return;
 
     try {
+      // First check if order is still pending and not assigned
+      const { data: currentOrder, error: checkError } = await supabase
+        .from('orders')
+        .select('status, worker_id')
+        .eq('id', orderId)
+        .single();
+
+      if (checkError) {
+        console.error('❌ Failed to check order:', checkError);
+        throw checkError;
+      }
+
+      if (currentOrder.status !== 'pending') {
+        showAlert('Xatolik', 'Bu buyurtma allaqachon boshqa ishchi tomonidan qabul qilingan');
+        loadOrders(); // Refresh list
+        return;
+      }
+
+      // Update order status
       const { error } = await supabase
         .from('orders')
         .update({
@@ -418,15 +451,21 @@ export default function WorkerDashboardScreen() {
           worker_id: user.id,
         })
         .eq('id', orderId)
-        .eq('status', 'pending'); // Only accept if still pending
+        .eq('status', 'pending'); // Double-check still pending
 
       if (error) throw error;
 
+      // Immediately remove from pending list
+      setOrders(prev => prev.filter(o => o.id !== orderId));
+
       showAlert('Muvaffaqiyatli!', 'Buyurtma qabul qilindi');
-      loadOrders();
+      
+      // Reload orders to sync with database
+      setTimeout(() => loadOrders(), 500);
     } catch (error: any) {
       console.error('❌ Failed to accept order:', error);
-      showAlert('Xatolik', 'Buyurtmani qabul qilishda xatolik');
+      showAlert('Xatolik', error.message || 'Buyurtmani qabul qilishda xatolik');
+      loadOrders(); // Refresh on error
     }
   };
 
@@ -437,13 +476,20 @@ export default function WorkerDashboardScreen() {
       // Add worker ID to rejected_by array
       const { data: order, error: fetchError } = await supabase
         .from('orders')
-        .select('rejected_by')
+        .select('rejected_by, status')
         .eq('id', orderId)
         .single();
 
       if (fetchError) {
         console.error('❌ Failed to fetch order:', fetchError);
         throw fetchError;
+      }
+
+      // If order is no longer pending, don't reject
+      if (order.status !== 'pending') {
+        console.log('⚠️ Order is no longer pending, skipping reject');
+        setOrders(prev => prev.filter(o => o.id !== orderId));
+        return;
       }
 
       let rejectedBy: string[] = [];
@@ -461,12 +507,17 @@ export default function WorkerDashboardScreen() {
       // Add worker ID if not already rejected
       if (!rejectedBy.includes(user.id)) {
         rejectedBy.push(user.id);
+      } else {
+        console.log('⚠️ Already rejected this order');
+        setOrders(prev => prev.filter(o => o.id !== orderId));
+        return;
       }
 
       const { error: updateError } = await supabase
         .from('orders')
         .update({ rejected_by: rejectedBy })
-        .eq('id', orderId);
+        .eq('id', orderId)
+        .eq('status', 'pending'); // Only update if still pending
 
       if (updateError) {
         console.error('❌ Failed to update rejected_by:', updateError);
@@ -475,15 +526,21 @@ export default function WorkerDashboardScreen() {
 
       console.log('✅ Order rejected successfully');
 
+      // Immediately remove from list
+      setOrders(prev => prev.filter(o => o.id !== orderId));
+
       if (!silent) {
         showAlert('Rad etildi', 'Buyurtma rad etildi');
       }
-      loadOrders();
+      
+      // Reload orders to sync
+      setTimeout(() => loadOrders(), 500);
     } catch (error: any) {
       console.error('❌ Failed to reject order:', error);
       if (!silent) {
-        showAlert('Xatolik', 'Buyurtmani rad etishda xatolik');
+        showAlert('Xatolik', error.message || 'Buyurtmani rad etishda xatolik');
       }
+      loadOrders(); // Refresh on error
     }
   };
 
