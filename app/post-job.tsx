@@ -231,14 +231,8 @@ export default function PostJobScreen() {
       // Close modal
       setShowSummary(false);
       
-      // Navigate to worker search screen
-      router.push({
-        pathname: '/worker-search',
-        params: { 
-          category: categoryName || category,
-          orderId: orderData.id,
-        },
-      });
+      // Navigate to my orders screen
+      router.replace('/(tabs)/my-ads');
     } catch (error: any) {
       console.error('Failed to post ad:', error);
       if (Platform.OS === 'web') {

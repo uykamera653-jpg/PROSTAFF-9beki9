@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Platform,
   Linking,
   ActionSheetIOS,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,14 +19,29 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
 import { useAuth } from '../../hooks/useAuth';
-import { useJobs } from '../../hooks/useJobs';
-import { useCompanies } from '../../hooks/useCompanies';
-import { useWorkers } from '../../hooks/useWorkers';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-
 import { spacing, typography, borderRadius } from '../../constants/theme';
-import { JobAd, ServiceOrder } from '../../types';
+import { supabase } from '../../lib/supabase';
+
+type OrderStatus = 'pending' | 'accepted' | 'in_progress' | 'completed' | 'cancelled';
+
+interface CustomerOrder {
+  id: string;
+  category_id: string;
+  title: string;
+  description: string;
+  location: string;
+  latitude?: number;
+  longitude?: number;
+  images: string[];
+  status: OrderStatus;
+  customer_phone?: string;
+  created_at: string;
+  updated_at: string;
+  expires_at?: string;
+  worker_id?: string;
+}
 
 export default function MyAdsScreen() {
   const router = useRouter();
@@ -32,420 +49,355 @@ export default function MyAdsScreen() {
   const { theme } = useTheme();
   const { t } = useTranslation();
   const { user } = useAuth();
-  const { getUserJobs } = useJobs();
-  const { getUserOrders } = useCompanies();
 
-  const [activeTab, setActiveTab] = useState<'jobs' | 'orders' | 'hired'>('jobs');
-  const { getUserHiredWorkers, updateWorkerStatus, rateWorker } = useWorkers();
+  const [activeTab, setActiveTab] = useState<OrderStatus | 'all'>('pending');
+  const [orders, setOrders] = useState<CustomerOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [orderTimers, setOrderTimers] = useState<{ [orderId: string]: number }>({});
 
-  const myJobs = user ? getUserJobs(user.id) : [];
-  const myOrders = user ? getUserOrders(user.id) : [];
-  const myHiredWorkers = user ? getUserHiredWorkers(user.id) : [];
-  const [ratingModalVisible, setRatingModalVisible] = useState(false);
-  const [selectedWorkerForRating, setSelectedWorkerForRating] = useState<string | null>(null);
-  const [selectedRating, setSelectedRating] = useState(0);
+  // Load orders on mount and when tab changes
+  useEffect(() => {
+    if (user) {
+      loadOrders();
+      setupRealtimeSubscription();
+    }
+  }, [user, activeTab]);
+
+  // Timer for pending orders
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setOrderTimers((prev) => {
+        const updated = { ...prev };
+        orders.forEach((order) => {
+          if (order.status === 'pending' && order.expires_at) {
+            const expiresAt = new Date(order.expires_at).getTime();
+            const now = Date.now();
+            const remaining = Math.max(0, Math.floor((expiresAt - now) / 1000));
+            updated[order.id] = remaining;
+          }
+        });
+        return updated;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [orders]);
+
+  const loadOrders = async () => {
+    if (!user?.id) return;
+
+    try {
+      setRefreshing(true);
+      console.log('🔄 Loading customer orders...');
+
+      let query = supabase
+        .from('orders')
+        .select('*')
+        .eq('customer_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (activeTab !== 'all') {
+        query = query.eq('status', activeTab);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('❌ Failed to load orders:', error);
+        throw error;
+      }
+
+      console.log('✅ Loaded orders:', data?.length || 0);
+      setOrders(data || []);
+    } catch (error: any) {
+      console.error('❌ Error loading orders:', error);
+      if (Platform.OS === 'web') {
+        alert('Buyurtmalarni yuklab bo\'lmadi');
+      } else {
+        Alert.alert('Xatolik', 'Buyurtmalarni yuklab bo\'lmadi');
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const setupRealtimeSubscription = () => {
+    if (!user?.id) return;
+
+    console.log('📡 Setting up real-time subscription for customer orders');
+    const channel = supabase
+      .channel('customer-orders-' + user.id)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+          filter: `customer_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log('📨 Real-time order update:', payload);
+          loadOrders();
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Subscription status:', status);
+      });
+
+    return () => {
+      console.log('🔌 Cleaning up subscription');
+      supabase.removeChannel(channel);
+    };
+  };
 
   const handleCall = (phoneNumber: string) => {
     Linking.openURL(`tel:${phoneNumber}`);
   };
 
-  const handleSMS = (phoneNumber: string) => {
-    Linking.openURL(`sms:${phoneNumber}`);
-  };
-
-  const handleChangeStatus = (workerId: string, currentStatus: string) => {
-    const statuses = ['pending', 'confirmed', 'completed'];
-    const currentIndex = statuses.indexOf(currentStatus);
-    const nextStatus = statuses[(currentIndex + 1) % statuses.length] as 'pending' | 'confirmed' | 'completed';
-
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: [t.cancel, t.pending, t.confirmed, t.completed],
-          cancelButtonIndex: 0,
-        },
-        (buttonIndex) => {
-          if (buttonIndex > 0) {
-            const selectedStatus = statuses[buttonIndex - 1] as 'pending' | 'confirmed' | 'completed';
-            updateWorkerStatus(workerId, selectedStatus);
-          }
-        }
-      );
-    } else {
-      updateWorkerStatus(workerId, nextStatus);
+  const getStatusColor = (status: OrderStatus) => {
+    switch (status) {
+      case 'pending':
+        return theme.warning;
+      case 'accepted':
+        return theme.primary;
+      case 'in_progress':
+        return theme.info;
+      case 'completed':
+        return theme.success;
+      case 'cancelled':
+        return theme.error;
+      default:
+        return theme.textSecondary;
     }
   };
 
-  const handleRateWorker = (workerId: string) => {
-    setSelectedWorkerForRating(workerId);
-    setSelectedRating(0);
-    setRatingModalVisible(true);
-  };
-
-  const submitRating = async () => {
-    if (selectedRating === 0 || !selectedWorkerForRating) return;
-    await rateWorker(selectedWorkerForRating, selectedRating);
-    setRatingModalVisible(false);
-    if (Platform.OS === 'web') {
-      alert(t.thankYou);
-    } else {
-      Alert.alert(t.appName, t.thankYou);
+  const getStatusText = (status: OrderStatus) => {
+    switch (status) {
+      case 'pending':
+        return 'Kutilmoqda';
+      case 'accepted':
+        return 'Qabul qilindi';
+      case 'in_progress':
+        return 'Jarayonda';
+      case 'completed':
+        return 'Bajarildi';
+      case 'cancelled':
+        return 'Bekor qilindi';
+      default:
+        return status;
     }
   };
 
-  const renderJobItem = ({ item }: { item: JobAd }) => (
-    <TouchableOpacity
-      onPress={() => router.push({ pathname: '/order-detail', params: { orderId: item.id } })}
-      activeOpacity={0.7}
-    >
-      <Card style={styles.jobCard}>
-        <View style={styles.jobHeader}>
-          <Text style={[styles.category, { color: theme.primary }]}>
-            {t[item.category as keyof typeof t] as string}
-          </Text>
-          <View style={[styles.statusBadge, { backgroundColor: theme.success + '15' }]}>
-            <Text style={[styles.statusText, { color: theme.success }]}>
-              {item.status}
-            </Text>
-          </View>
-        </View>
-        
-        <Text style={[styles.description, { color: theme.text }]} numberOfLines={2}>
-          {item.description}
-        </Text>
-        
-        <View style={styles.jobDetails}>
-          <View style={styles.detailRow}>
-            <Ionicons name="call" size={16} color={theme.textSecondary} />
-            <Text style={[styles.detailText, { color: theme.textSecondary }]}>
-              {item.phoneNumber}
-            </Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Ionicons name="location" size={16} color={theme.textSecondary} />
-            <Text style={[styles.detailText, { color: theme.textSecondary }]} numberOfLines={1}>
-              {item.location}
-            </Text>
-          </View>
-        </View>
-        
-        <Text style={[styles.date, { color: theme.textTertiary }]}>
-          {new Date(item.createdAt).toLocaleDateString()}
-        </Text>
-      </Card>
-    </TouchableOpacity>
-  );
+  const renderOrderItem = ({ item }: { item: CustomerOrder }) => {
+    const timeRemaining = orderTimers[item.id] || 0;
+    const minutes = Math.floor(timeRemaining / 60);
+    const seconds = timeRemaining % 60;
 
-  const renderOrderItem = ({ item }: { item: ServiceOrder }) => (
-    <Card style={styles.jobCard}>
-      <View style={styles.jobHeader}>
-        <Text style={[styles.category, { color: theme.primary }]}>
-          {item.companyName}
-        </Text>
-        <View style={[styles.statusBadge, { backgroundColor: theme.primary + '15' }]}>
-          <Text style={[styles.statusText, { color: theme.primary }]}>
-            {item.status}
+    return (
+      <TouchableOpacity
+        onPress={() => router.push({ pathname: '/order-detail', params: { orderId: item.id } })}
+        activeOpacity={0.7}
+      >
+        <Card style={styles.jobCard}>
+          <View style={styles.jobHeader}>
+            <Text style={[styles.category, { color: theme.primary }]}>
+              {item.title}
+            </Text>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
+              <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
+                {getStatusText(item.status)}
+              </Text>
+            </View>
+          </View>
+          
+          <Text style={[styles.description, { color: theme.text }]} numberOfLines={2}>
+            {item.description}
+          </Text>
+
+          {/* Timer for pending orders */}
+          {item.status === 'pending' && timeRemaining > 0 && (
+            <View style={[styles.timerContainer, { backgroundColor: theme.warning + '10' }]}>
+              <Ionicons name="timer" size={18} color={theme.warning} />
+              <Text style={[styles.timerText, { color: theme.warning }]}>
+                Ishchi topish uchun: {minutes}:{seconds.toString().padStart(2, '0')}
+              </Text>
+            </View>
+          )}
+
+          {item.status === 'pending' && timeRemaining === 0 && (
+            <View style={[styles.timerContainer, { backgroundColor: theme.error + '10' }]}>
+              <Ionicons name="alert-circle" size={18} color={theme.error} />
+              <Text style={[styles.timerText, { color: theme.error }]}>
+                Muddati tugadi
+              </Text>
+            </View>
+          )}
+          
+          <View style={styles.jobDetails}>
+            <View style={styles.detailRow}>
+              <Ionicons name="location" size={16} color={theme.textSecondary} />
+              <Text style={[styles.detailText, { color: theme.textSecondary }]} numberOfLines={1}>
+                {item.location}
+              </Text>
+            </View>
+          </View>
+          
+          <Text style={[styles.date, { color: theme.textTertiary }]}>
+            {new Date(item.created_at).toLocaleDateString('uz-UZ')}
+          </Text>
+        </Card>
+      </TouchableOpacity>
+    );
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background, paddingTop: insets.top }]}>
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: theme.text }]}>Buyurtmalarim</Text>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+            Yuklanmoqda...
           </Text>
         </View>
       </View>
-      
-      <Text style={[styles.serviceTypeText, { color: theme.textSecondary }]}>
-        {item.serviceType}
-      </Text>
-      
-      <View style={styles.jobDetails}>
-        <View style={styles.detailRow}>
-          <Ionicons name="person" size={16} color={theme.textSecondary} />
-          <Text style={[styles.detailText, { color: theme.textSecondary }]}>
-            {item.customerName}
-          </Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Ionicons name="call" size={16} color={theme.textSecondary} />
-          <Text style={[styles.detailText, { color: theme.textSecondary }]}>
-            {item.phoneNumber}
-          </Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Ionicons name="location" size={16} color={theme.textSecondary} />
-          <Text style={[styles.detailText, { color: theme.textSecondary }]} numberOfLines={1}>
-            {item.location}
-          </Text>
-        </View>
-      </View>
-      
-      <Text style={[styles.date, { color: theme.textTertiary }]}>
-        {new Date(item.createdAt).toLocaleDateString()}
-      </Text>
-    </Card>
-  );
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background, paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.text }]}>{t.myAds}</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Buyurtmalarim</Text>
       </View>
 
-      <View style={styles.tabsContainer}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabsContainer}
+      >
         <TouchableOpacity
           style={[
-            styles.tab,
-            activeTab === 'jobs' && { borderBottomColor: theme.primary, borderBottomWidth: 2 },
+            styles.tabButton,
+            activeTab === 'pending' && { backgroundColor: theme.warning, borderColor: theme.warning },
           ]}
-          onPress={() => setActiveTab('jobs')}
+          onPress={() => setActiveTab('pending')}
+          activeOpacity={0.8}
         >
-          <Ionicons
-            name="hammer"
-            size={20}
-            color={activeTab === 'jobs' ? theme.primary : theme.textSecondary}
-          />
           <Text
             style={[
-              styles.tabText,
-              { color: activeTab === 'jobs' ? theme.primary : theme.textSecondary },
+              styles.tabButtonText,
+              { color: activeTab === 'pending' ? '#FFFFFF' : theme.warning },
             ]}
           >
-            {t.dailyWorkers}
+            Kutilmoqda
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[
-            styles.tab,
-            activeTab === 'orders' && { borderBottomColor: theme.primary, borderBottomWidth: 2 },
+            styles.tabButton,
+            activeTab === 'accepted' && { backgroundColor: theme.primary, borderColor: theme.primary },
           ]}
-          onPress={() => setActiveTab('orders')}
+          onPress={() => setActiveTab('accepted')}
+          activeOpacity={0.8}
         >
-          <Ionicons
-            name="business"
-            size={20}
-            color={activeTab === 'orders' ? theme.primary : theme.textSecondary}
-          />
           <Text
             style={[
-              styles.tabText,
-              { color: activeTab === 'orders' ? theme.primary : theme.textSecondary },
+              styles.tabButtonText,
+              { color: activeTab === 'accepted' ? '#FFFFFF' : theme.primary },
             ]}
           >
-            {t.myOrders}
+            Qabul qilindi
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[
-            styles.tab,
-            activeTab === 'hired' && { borderBottomColor: theme.primary, borderBottomWidth: 2 },
+            styles.tabButton,
+            activeTab === 'in_progress' && { backgroundColor: theme.info, borderColor: theme.info },
           ]}
-          onPress={() => setActiveTab('hired')}
+          onPress={() => setActiveTab('in_progress')}
+          activeOpacity={0.8}
         >
-          <Ionicons
-            name="people"
-            size={20}
-            color={activeTab === 'hired' ? theme.primary : theme.textSecondary}
-          />
           <Text
             style={[
-              styles.tabText,
-              { color: activeTab === 'hired' ? theme.primary : theme.textSecondary },
+              styles.tabButtonText,
+              { color: activeTab === 'in_progress' ? '#FFFFFF' : theme.info },
             ]}
           >
-            {t.hiredWorkers}
+            Jarayonda
           </Text>
         </TouchableOpacity>
-      </View>
 
-      {activeTab === 'hired' ? (
-        myHiredWorkers.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="people-outline" size={64} color={theme.textTertiary} />
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-              {t.noHiredWorkers}
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            data={myHiredWorkers}
-            renderItem={({ item }) => (
-              <Card style={styles.jobCard}>
-                <View style={styles.jobHeader}>
-                  <Text style={[styles.category, { color: theme.primary }]}>
-                    {item.workerName}
-                  </Text>
-                  <TouchableOpacity
-                    style={[
-                      styles.statusBadge,
-                      {
-                        backgroundColor:
-                          item.status === 'completed'
-                            ? theme.success + '15'
-                            : item.status === 'confirmed'
-                            ? theme.primary + '15'
-                            : theme.textTertiary + '15',
-                      },
-                    ]}
-                    onPress={() => handleChangeStatus(item.id, item.status)}
-                  >
-                    <Text
-                      style={[
-                        styles.statusText,
-                        {
-                          color:
-                            item.status === 'completed'
-                              ? theme.success
-                              : item.status === 'confirmed'
-                              ? theme.primary
-                              : theme.textSecondary,
-                        },
-                      ]}
-                    >
-                      {t[item.status as keyof typeof t] as string}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                
-                <View style={styles.jobDetails}>
-                  <View style={styles.detailRow}>
-                    <Ionicons name="call" size={16} color={theme.textSecondary} />
-                    <Text style={[styles.detailText, { color: theme.textSecondary }]}>
-                      {item.workerPhone}
-                    </Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Ionicons name="time" size={16} color={theme.textSecondary} />
-                    <Text style={[styles.detailText, { color: theme.textSecondary }]}>
-                      {t.arrivalTime}: {item.arrivalTime} {t.minutes}
-                    </Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Ionicons name="cash" size={16} color={theme.textSecondary} />
-                    <Text style={[styles.detailText, { color: theme.textSecondary }]}>
-                      {item.dailyRate.toLocaleString()} {t.som}
-                    </Text>
-                  </View>
-                </View>
+        <TouchableOpacity
+          style={[
+            styles.tabButton,
+            activeTab === 'completed' && { backgroundColor: theme.success, borderColor: theme.success },
+          ]}
+          onPress={() => setActiveTab('completed')}
+          activeOpacity={0.8}
+        >
+          <Text
+            style={[
+              styles.tabButtonText,
+              { color: activeTab === 'completed' ? '#FFFFFF' : theme.success },
+            ]}
+          >
+            Bajarilgan
+          </Text>
+        </TouchableOpacity>
 
-                {/* Contact and Rating Buttons */}
-                <View style={styles.actionButtons}>
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: theme.primary + '15' }]}
-                    onPress={() => handleCall(item.workerPhone)}
-                  >
-                    <Ionicons name="call" size={18} color={theme.primary} />
-                    <Text style={[styles.actionButtonText, { color: theme.primary }]}>
-                      {t.call}
-                    </Text>
-                  </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.tabButton,
+            activeTab === 'cancelled' && { backgroundColor: theme.error, borderColor: theme.error },
+          ]}
+          onPress={() => setActiveTab('cancelled')}
+          activeOpacity={0.8}
+        >
+          <Text
+            style={[
+              styles.tabButtonText,
+              { color: activeTab === 'cancelled' ? '#FFFFFF' : theme.error },
+            ]}
+          >
+            Bekor qilindi
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
 
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: theme.success + '15' }]}
-                    onPress={() => handleSMS(item.workerPhone)}
-                  >
-                    <Ionicons name="chatbubble" size={18} color={theme.success} />
-                    <Text style={[styles.actionButtonText, { color: theme.success }]}>
-                      {t.sendSMS}
-                    </Text>
-                  </TouchableOpacity>
-
-                  {item.status === 'completed' && (
-                    <TouchableOpacity
-                      style={[styles.actionButton, { backgroundColor: '#F59E0B' + '15' }]}
-                      onPress={() => handleRateWorker(item.id)}
-                    >
-                      <Ionicons name="star" size={18} color="#F59E0B" />
-                      <Text style={[styles.actionButtonText, { color: '#F59E0B' }]}>
-                        {t.giveRating}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-                
-                <Text style={[styles.date, { color: theme.textTertiary }]}>
-                  {new Date(item.hiredAt).toLocaleDateString()}
-                </Text>
-              </Card>
-            )}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.list}
-            showsVerticalScrollIndicator={false}
-          />
-        )
-      ) : activeTab === 'jobs' ? (
-        myJobs.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="newspaper-outline" size={64} color={theme.textTertiary} />
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-              {t.noOrders}
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            data={myJobs}
-            renderItem={renderJobItem}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.list}
-            showsVerticalScrollIndicator={false}
-          />
-        )
-      ) : (
-        myOrders.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="cart-outline" size={64} color={theme.textTertiary} />
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-              {t.noOrders}
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            data={myOrders}
-            renderItem={renderOrderItem}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.list}
-            showsVerticalScrollIndicator={false}
-          />
-        )
-      )}
-
-
-
-      {/* Rating Modal */}
-      <Modal visible={ratingModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>
-              {t.howWasWork}
-            </Text>
-            
-            <View style={styles.ratingContainer}>
-              {[1, 2, 3, 4, 5].map((star) => (
-                <TouchableOpacity
-                  key={star}
-                  onPress={() => setSelectedRating(star)}
-                  style={styles.starButton}
-                >
-                  <Ionicons
-                    name={star <= selectedRating ? 'star' : 'star-outline'}
-                    size={48}
-                    color="#F59E0B"
-                  />
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.modalButtons}>
-              <Button
-                title={t.cancel}
-                onPress={() => setRatingModalVisible(false)}
-                variant="outline"
-              />
-              <Button
-                title={t.leaveRating}
-                onPress={submitRating}
-                disabled={selectedRating === 0}
-              />
-            </View>
-          </View>
+      {orders.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="document-text-outline" size={64} color={theme.textTertiary} />
+          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+            {activeTab === 'pending'
+              ? 'Kutilayotgan buyurtmalar yo\'q'
+              : activeTab === 'completed'
+              ? 'Bajarilgan buyurtmalar yo\'q'
+              : 'Buyurtmalar yo\'q'}
+          </Text>
         </View>
-      </Modal>
+      ) : (
+        <FlatList
+          data={orders}
+          renderItem={renderOrderItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={loadOrders}
+              colors={[theme.primary]}
+              tintColor={theme.primary}
+            />
+          }
+        />
+      )}
     </View>
   );
 }
@@ -516,21 +468,44 @@ const styles = StyleSheet.create({
     ...typography.body,
   },
   tabsContainer: {
-    flexDirection: 'row',
     paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
   },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
+  tabButton: {
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+    backgroundColor: 'transparent',
+    marginRight: spacing.xs,
   },
-  tabText: {
+  tabButtonText: {
     ...typography.bodyMedium,
     fontSize: 14,
+    fontWeight: '600',
+  },
+  timerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+    marginBottom: spacing.sm,
+  },
+  timerText: {
+    ...typography.small,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  loadingText: {
+    ...typography.body,
   },
   serviceTypeText: {
     ...typography.body,
