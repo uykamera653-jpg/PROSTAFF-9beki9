@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -76,6 +77,7 @@ export default function WorkerDashboardScreen() {
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [orderTimers, setOrderTimers] = useState<{ [orderId: string]: number }>({});
   const { showAlert, AlertComponent } = useAlert();
+  const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   
   // Push notifications
   const { expoPushToken, isLoading: notifLoading, error: notifError } = useNotifications(user?.id || null);
@@ -139,10 +141,15 @@ export default function WorkerDashboardScreen() {
     if (workerProfile && isOnline) {
       loadOrders();
       const cleanup = setupRealtimeSubscription();
-      return cleanup;
+      startLocationTracking();
+      return () => {
+        cleanup();
+        stopLocationTracking();
+      };
     } else if (workerProfile && !isOnline) {
       // Clear orders when offline
       setOrders([]);
+      stopLocationTracking();
     }
   }, [workerProfile, selectedTab, isOnline]);
 
@@ -303,6 +310,78 @@ export default function WorkerDashboardScreen() {
     };
   };
 
+  const startLocationTracking = async () => {
+    if (!user?.id) return;
+
+    try {
+      // Request location permissions
+      const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+      
+      if (foregroundStatus !== 'granted') {
+        console.warn('⚠️ Location permission denied');
+        showAlert('Ruxsat kerak', 'Joylashuvni kuzatish uchun ruxsat bering');
+        return;
+      }
+
+      // Stop existing tracking if any
+      if (locationSubscriptionRef.current) {
+        locationSubscriptionRef.current.remove();
+      }
+
+      console.log('📍 Starting location tracking...');
+
+      // Start tracking location
+      locationSubscriptionRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced,
+          distanceInterval: 50, // Update every 50 meters
+          timeInterval: 30000, // Update every 30 seconds
+        },
+        async (location) => {
+          const { latitude, longitude } = location.coords;
+          console.log('📍 Location updated:', latitude.toFixed(6), longitude.toFixed(6));
+
+          // Update local state
+          setWorkerLocation({ latitude, longitude });
+
+          // Update database
+          try {
+            const { error } = await supabase
+              .from('workers')
+              .update({
+                latitude,
+                longitude,
+                location_updated_at: new Date().toISOString(),
+              })
+              .eq('id', user.id);
+
+            if (error) {
+              console.error('❌ Failed to update location:', error);
+            } else {
+              console.log('✅ Location saved to database');
+            }
+          } catch (err) {
+            console.error('❌ Location update error:', err);
+          }
+        }
+      );
+
+      console.log('✅ Location tracking started');
+    } catch (error: any) {
+      console.error('❌ Failed to start location tracking:', error);
+      showAlert('Xatolik', 'Joylashuvni kuzatish boshlanmadi');
+    }
+  };
+
+  const stopLocationTracking = () => {
+    if (locationSubscriptionRef.current) {
+      console.log('🛑 Stopping location tracking...');
+      locationSubscriptionRef.current.remove();
+      locationSubscriptionRef.current = null;
+      console.log('✅ Location tracking stopped');
+    }
+  };
+
   const toggleOnlineStatus = async (value: boolean) => {
     if (!user) return;
 
@@ -314,6 +393,14 @@ export default function WorkerDashboardScreen() {
 
       if (error) throw error;
       setIsOnline(value);
+
+      if (value) {
+        // Start location tracking when going online
+        await startLocationTracking();
+      } else {
+        // Stop location tracking when going offline
+        stopLocationTracking();
+      }
     } catch (error: any) {
       console.error('❌ Failed to update online status:', error);
       showAlert('Xatolik', 'Status yangilanmadi');
