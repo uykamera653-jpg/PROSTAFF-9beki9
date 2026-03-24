@@ -209,18 +209,6 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
     
     // Web platform (Leaflet)
     if (Platform.OS === 'web' && MapContainer && TileLayer && MapMarker && L) {
-      const MapContent = () => {
-        if (useMapEvents) {
-          useMapEvents({
-            click: (e: any) => {
-              const { lat, lng } = e.latlng;
-              handleMapPress({ latitude: lat, longitude: lng });
-            },
-          });
-        }
-        return null;
-      };
-
       // Custom icon for better visibility
       const customIcon = new L.DivIcon({
         html: `
