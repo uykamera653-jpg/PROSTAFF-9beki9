@@ -136,12 +136,15 @@ export default function WorkerDashboardScreen() {
   }, [selectedTab, orders]);
 
   useEffect(() => {
-    if (workerProfile) {
+    if (workerProfile && isOnline) {
       loadOrders();
       const cleanup = setupRealtimeSubscription();
       return cleanup;
+    } else if (workerProfile && !isOnline) {
+      // Clear orders when offline
+      setOrders([]);
     }
-  }, [workerProfile, selectedTab]);
+  }, [workerProfile, selectedTab, isOnline]);
 
   const checkWorkerProfile = async () => {
     try {
@@ -345,23 +348,45 @@ export default function WorkerDashboardScreen() {
 
     try {
       // Add worker ID to rejected_by array
-      const { data: order } = await supabase
+      const { data: order, error: fetchError } = await supabase
         .from('orders')
         .select('rejected_by')
         .eq('id', orderId)
         .single();
 
-      const rejectedBy = order?.rejected_by || [];
+      if (fetchError) {
+        console.error('❌ Failed to fetch order:', fetchError);
+        throw fetchError;
+      }
+
+      let rejectedBy: string[] = [];
+      
+      // Parse rejected_by safely
+      if (order?.rejected_by) {
+        if (Array.isArray(order.rejected_by)) {
+          rejectedBy = order.rejected_by;
+        } else {
+          console.warn('⚠️ rejected_by is not an array:', order.rejected_by);
+          rejectedBy = [];
+        }
+      }
+
+      // Add worker ID if not already rejected
       if (!rejectedBy.includes(user.id)) {
         rejectedBy.push(user.id);
       }
 
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from('orders')
         .update({ rejected_by: rejectedBy })
         .eq('id', orderId);
 
-      if (error) throw error;
+      if (updateError) {
+        console.error('❌ Failed to update rejected_by:', updateError);
+        throw updateError;
+      }
+
+      console.log('✅ Order rejected successfully');
 
       if (!silent) {
         showAlert('Rad etildi', 'Buyurtma rad etildi');
@@ -417,8 +442,16 @@ export default function WorkerDashboardScreen() {
   };
 
   const handleLogout = async () => {
-    await logout();
-    router.replace('/');
+    try {
+      console.log('🔓 Logging out from worker dashboard...');
+      await logout();
+      // Force redirect to login immediately
+      router.replace('/');
+    } catch (error) {
+      console.error('❌ Logout error:', error);
+      // Still redirect even on error
+      router.replace('/');
+    }
   };
 
   if (loading || roleLoading) {

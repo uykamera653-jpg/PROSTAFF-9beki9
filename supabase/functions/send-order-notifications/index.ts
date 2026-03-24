@@ -131,8 +131,39 @@ serve(async (req) => {
       );
     }
 
+    // Double-check workers are still online before sending
+    const { data: onlineCheck, error: onlineError } = await supabaseAdmin
+      .from('workers')
+      .select('id, is_online')
+      .in('id', tokens.map(t => t.user_id));
+
+    if (onlineError) {
+      console.error('⚠️ Failed to verify online status:', onlineError);
+    }
+
+    // Filter tokens to only send to currently online workers
+    const finalTokens = tokens.filter(token => {
+      const worker = onlineCheck?.find(w => w.id === token.user_id);
+      const stillOnline = worker?.is_online === true;
+      
+      if (!stillOnline) {
+        console.log(`⏸️ Worker ${token.user_id} is now offline, skipping notification`);
+      }
+      
+      return stillOnline;
+    });
+
+    console.log(`📱 ${finalTokens.length}/${tokens.length} workers still online`);
+
+    if (finalTokens.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, sent: 0, message: 'No workers online at send time' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Send push notifications via Expo Push API
-    const messages = tokens.map(token => {
+    const messages = finalTokens.map(token => {
       // Find worker distance
       const worker = nearbyWorkers.find(w => w.id === token.user_id);
       const distance = worker ? ` (${worker.distance.toFixed(1)}km)` : '';

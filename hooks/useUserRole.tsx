@@ -13,8 +13,15 @@ export function useUserRole() {
 
   useEffect(() => {
     if (!user) {
+      console.log('⚠️ useUserRole: No user, resetting to customer');
       setRole('customer');
       setIsLoading(false);
+      
+      // Cleanup any existing subscriptions
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
       return;
     }
 

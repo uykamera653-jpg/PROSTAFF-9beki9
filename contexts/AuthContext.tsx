@@ -174,7 +174,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
-      console.log('Logging out...');
+      console.log('🔓 Logging out...');
+      
+      // Cleanup profile listener first
+      cleanupProfileListener();
       
       // Immediately clear user state to prevent redirect
       setUser(null);
@@ -188,9 +191,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Clear local storage
       await AsyncStorage.removeItem('user');
       
-      console.log('Logout complete');
+      console.log('✅ Logout complete');
     } catch (error) {
       console.error('Failed to logout:', error);
+      cleanupProfileListener();
       setUser(null); // Still clear user even on error
       throw error;
     }
