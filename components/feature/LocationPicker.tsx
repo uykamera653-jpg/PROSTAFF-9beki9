@@ -177,22 +177,7 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
     onClose();
   };
 
-  // Web uchun xarita event handler komponenti
-  const MapClickHandler = () => {
-    if (!useMapEvents) return null;
-    
-    try {
-      useMapEvents({
-        click: (e: any) => {
-          const { lat, lng } = e.latlng;
-          handleMapPress({ latitude: lat, longitude: lng });
-        },
-      });
-    } catch (e) {
-      console.error('Map events error:', e);
-    }
-    return null;
-  };
+
 
   const renderMap = () => {
     // Mobil platformalar (iOS, Android)
@@ -281,28 +266,49 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
         iconAnchor: [20, 50],
       });
 
+      // MapContent component to handle events and marker updates
+      const MapContent = () => {
+        const map = useMapEvents({
+          click: (e: any) => {
+            const { lat, lng } = e.latlng;
+            handleMapPress({ latitude: lat, longitude: lng });
+          },
+        });
+
+        // Update map center when location changes without re-rendering entire map
+        React.useEffect(() => {
+          if (map) {
+            map.setView([selectedLocation.latitude, selectedLocation.longitude], map.getZoom());
+          }
+        }, [selectedLocation.latitude, selectedLocation.longitude, map]);
+
+        return (
+          <MapMarker 
+            position={[selectedLocation.latitude, selectedLocation.longitude]}
+            draggable={true}
+            icon={customIcon}
+            eventHandlers={{
+              dragend: (e: any) => {
+                const { lat, lng } = e.target.getLatLng();
+                handleMapPress({ latitude: lat, longitude: lng });
+              },
+            }}
+          />
+        );
+      };
+
       return (
         <div style={{ height: '100%', width: '100%', position: 'relative' }}>
           <MapContainer
             center={[selectedLocation.latitude, selectedLocation.longitude]}
             zoom={15}
             style={{ height: '100%', width: '100%', cursor: 'crosshair', borderRadius: '8px' }}
-            key={`${selectedLocation.latitude}-${selectedLocation.longitude}`}
+            scrollWheelZoom={true}
+            zoomControl={true}
           >
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; OpenStreetMap'
-            />
-            <MapMarker 
-              position={[selectedLocation.latitude, selectedLocation.longitude]}
-              draggable={true}
-              icon={customIcon}
-              eventHandlers={{
-                dragend: (e: any) => {
-                  const { lat, lng } = e.target.getLatLng();
-                  handleMapPress({ latitude: lat, longitude: lng });
-                },
-              }}
             />
             <MapContent />
           </MapContainer>

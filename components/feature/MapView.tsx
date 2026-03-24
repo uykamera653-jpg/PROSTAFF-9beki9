@@ -128,17 +128,17 @@ export function MapViewComponent({
           width: '100%', 
           borderRadius: `${borderRadius.md}px`, 
           overflow: 'hidden',
-          position: 'relative'
+          position: 'relative',
+          pointerEvents: 'auto'
         }}>
           <MapContainer
             center={[latitude, longitude]}
             zoom={15}
             style={{ height: '100%', width: '100%' }}
-            scrollWheelZoom={false}
-            dragging={false}
-            zoomControl={false}
+            scrollWheelZoom={true}
+            dragging={true}
+            zoomControl={true}
             attributionControl={false}
-            key={`${latitude}-${longitude}`}
           >
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
