@@ -256,19 +256,12 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
 
       // MapContent component to handle events and marker updates
       const MapContent = () => {
-        const map = useMapEvents({
+        useMapEvents({
           click: (e: any) => {
             const { lat, lng } = e.latlng;
             handleMapPress({ latitude: lat, longitude: lng });
           },
         });
-
-        // Update map center when location changes without re-rendering entire map
-        React.useEffect(() => {
-          if (map) {
-            map.setView([selectedLocation.latitude, selectedLocation.longitude], map.getZoom());
-          }
-        }, [selectedLocation.latitude, selectedLocation.longitude, map]);
 
         return (
           <MapMarker 
@@ -277,7 +270,8 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
             icon={customIcon}
             eventHandlers={{
               dragend: (e: any) => {
-                const { lat, lng } = e.target.getLatLng();
+                const marker = e.target;
+                const { lat, lng } = marker.getLatLng();
                 handleMapPress({ latitude: lat, longitude: lng });
               },
             }}
