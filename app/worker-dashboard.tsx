@@ -64,7 +64,7 @@ export default function WorkerDashboardScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { t } = useTranslation();
-  const { user, logout } = useAuth();
+  const { user, signOut } = useAuth();
   const { role, isLoading: roleLoading } = useUserRole();
 
   const [selectedTab, setSelectedTab] = useState<OrderStatus>('pending');
@@ -588,12 +588,10 @@ export default function WorkerDashboardScreen() {
   const handleLogout = async () => {
     try {
       console.log('🔓 Logging out from worker dashboard...');
-      await logout();
-      // Force redirect to login immediately
+      await signOut();
       router.replace('/');
     } catch (error) {
       console.error('❌ Logout error:', error);
-      // Still redirect even on error
       router.replace('/');
     }
   };
