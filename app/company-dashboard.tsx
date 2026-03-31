@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNotificationSettings } from '../hooks/useNotificationSettings';
+import React, { useState, useEffect, useRef } from 'react';
 import { Audio } from 'expo-av';
 import {
   View,
@@ -14,7 +13,6 @@ import {
   Modal,
   Vibration,
 } from 'react-native';
-import { useNotificationSettings } from '../hooks/useNotificationSettings';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,6 +21,7 @@ import { useTheme } from '../hooks/useTheme';
 import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../hooks/useAuth';
 import { useUserRole } from '../hooks/useUserRole';
+import { useNotificationSettings } from '../hooks/useNotificationSettings';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -73,7 +72,7 @@ export default function CompanyDashboardScreen() {
   const { user, signOut } = useAuth();
   const { role, isLoading: roleLoading } = useUserRole();
   const { showAlert, AlertComponent } = useAlert();
-  const { settings: notifSettings } = useNotificationSettings();
+  const { settings: notifSettings, updateSettings: updateNotifSettings } = useNotificationSettings();
 
   const [activeTab, setActiveTab] = useState<TabType>('orders');
   const [ordersTab, setOrdersTab] = useState<OrderStatus>('pending');
@@ -94,10 +93,7 @@ export default function CompanyDashboardScreen() {
   const [locationCoords, setLocationCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const prevOrderCountRef = useRef<number>(0);
   const soundRef = useRef<Audio.Sound | null>(null);
-
-  const { settings: notifSettings, updateSettings: updateNotifSettings } = useNotificationSettings();
 
   // Check role and redirect if not company
   useEffect(() => {
@@ -177,23 +173,19 @@ export default function CompanyDashboardScreen() {
         .limit(100);
 
       if (ordersTab === 'pending') {
-        // Only orders specifically targeted at this company
         query = query
           .eq('status', 'pending')
           .eq('order_type', 'company')
           .eq('target_company_id', user!.id);
       } else if (ordersTab === 'accepted') {
-        // Orders accepted by this company
         query = query.eq('worker_id', user!.id).in('status', ['accepted', 'in_progress']);
       } else {
-        // Completed / cancelled orders for this company
         query = query.eq('worker_id', user!.id).in('status', ['completed', 'cancelled']);
       }
 
       const { data, error } = await query;
       if (error) throw error;
 
-      // Filter out orders already rejected by this company (for pending tab)
       let filtered = data || [];
       if (ordersTab === 'pending') {
         filtered = filtered.filter((o: any) => {
@@ -202,7 +194,6 @@ export default function CompanyDashboardScreen() {
         });
       }
 
-      // Enrich with customer info
       const customerIds = [...new Set(filtered.map((o: any) => o.customer_id).filter(Boolean))];
       let customersMap: Record<string, any> = {};
       if (customerIds.length > 0) {
@@ -253,7 +244,6 @@ export default function CompanyDashboardScreen() {
       .channel('company-dashboard-orders-' + user?.id)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders',
         filter: `target_company_id=eq.${user?.id}` }, async (payload) => {
-        // Play sound and vibrate for new incoming orders targeted at this company
         if (payload.new?.status === 'pending') {
           if (notifSettings.enabled && notifSettings.vibration && notifSettings.new_orders) {
             Vibration.vibrate([0, 400, 200, 400]);
@@ -513,7 +503,6 @@ export default function CompanyDashboardScreen() {
             {new Date(item.created_at).toLocaleString('uz-UZ')}
           </Text>
 
-          {/* Quick action buttons on card for pending */}
           {item.status === 'pending' && (
             <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
               <TouchableOpacity
@@ -577,7 +566,6 @@ export default function CompanyDashboardScreen() {
       {/* ORDERS TAB */}
       {activeTab === 'orders' && (
         <View style={{ flex: 1 }}>
-          {/* Stats */}
           <View style={styles.statsRow}>
             <Card style={styles.statCard}>
               <Text style={[styles.statValue, { color: theme.primary }]}>{profile?.rating?.toFixed(1) || '0.0'}</Text>
@@ -598,7 +586,6 @@ export default function CompanyDashboardScreen() {
             </Card>
           </View>
 
-          {/* Sub-tabs */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -723,7 +710,6 @@ export default function CompanyDashboardScreen() {
                 />
               </View>
 
-              {/* Lokatsiya */}
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, { color: theme.textSecondary }]}>Firma manzili / Lokatsiya</Text>
                 <TouchableOpacity
@@ -772,14 +758,15 @@ export default function CompanyDashboardScreen() {
             <Card>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Bildirishnoma sozlamalari</Text>
 
-              <View style={[styles.toggleRow, { marginBottom: spacing.md }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 }}>
-                  <View style={[styles.onlineIconBox, { backgroundColor: notifSettings.enabled ? theme.primary + '20' : theme.surfaceVariant }]}>
-                    <Ionicons name="notifications" size={22} color={notifSettings.enabled ? theme.primary : theme.textSecondary} />
+              {/* Master toggle */}
+              <View style={[styles.notifRow, { borderBottomColor: theme.border }]}>
+                <View style={styles.notifLeft}>
+                  <View style={[styles.notifIcon, { backgroundColor: notifSettings.enabled ? theme.primary + '20' : theme.surfaceVariant }]}>
+                    <Ionicons name="notifications" size={20} color={notifSettings.enabled ? theme.primary : theme.textSecondary} />
                   </View>
                   <View>
-                    <Text style={[styles.toggleTitle, { color: theme.text }]}>Bildirishnomalar</Text>
-                    <Text style={[styles.toggleSub, { color: theme.textSecondary }]}>Barcha bildirishnomalar</Text>
+                    <Text style={[styles.notifTitle, { color: theme.text }]}>Bildirishnomalar</Text>
+                    <Text style={[styles.notifSub, { color: theme.textSecondary }]}>Barcha bildirishnomalar</Text>
                   </View>
                 </View>
                 <Switch
@@ -790,14 +777,15 @@ export default function CompanyDashboardScreen() {
                 />
               </View>
 
-              <View style={[styles.toggleRow, { marginBottom: spacing.sm }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 }}>
-                  <View style={[styles.onlineIconBox, { backgroundColor: '#F59E0B20' }]}>
-                    <Ionicons name="volume-high" size={22} color={notifSettings.sound ? '#F59E0B' : theme.textSecondary} />
+              {/* Sound */}
+              <View style={[styles.notifRow, { borderBottomColor: theme.border }]}>
+                <View style={styles.notifLeft}>
+                  <View style={[styles.notifIcon, { backgroundColor: '#F59E0B20' }]}>
+                    <Ionicons name="volume-high" size={20} color="#F59E0B" />
                   </View>
                   <View>
-                    <Text style={[styles.toggleTitle, { color: theme.text }]}>Ovoz</Text>
-                    <Text style={[styles.toggleSub, { color: theme.textSecondary }]}>Yangi buyurtma ovozi</Text>
+                    <Text style={[styles.notifTitle, { color: theme.text }]}>Ovoz</Text>
+                    <Text style={[styles.notifSub, { color: theme.textSecondary }]}>Yangi buyurtma ovozi</Text>
                   </View>
                 </View>
                 <Switch
@@ -809,38 +797,40 @@ export default function CompanyDashboardScreen() {
                 />
               </View>
 
+              {/* Volume segments */}
               {notifSettings.sound && notifSettings.enabled && (
-                <View style={{ marginBottom: spacing.md, paddingHorizontal: spacing.sm }}>
-                  <Text style={[styles.toggleSub, { color: theme.textSecondary, marginBottom: spacing.xs }]}>Ovoz balandligi</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                    <Ionicons name="volume-low" size={16} color={theme.textSecondary} />
-                    <View style={{ flex: 1, flexDirection: 'row', backgroundColor: theme.surfaceVariant, borderRadius: borderRadius.md, overflow: 'hidden', height: 34 }}>
-                      {[0.25, 0.5, 0.75, 1.0].map((vol) => (
-                        <TouchableOpacity
-                          key={vol}
-                          style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: (notifSettings.volume ?? 1.0) >= vol ? '#F59E0B' : 'transparent' }}
-                          onPress={() => updateNotifSettings({ volume: vol })}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={{ color: (notifSettings.volume ?? 1.0) >= vol ? '#fff' : theme.textSecondary, fontSize: 11, fontWeight: '700' }}>
-                            {vol === 1.0 ? '100' : `${vol * 100}`}%
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    <Ionicons name="volume-high" size={16} color={theme.textSecondary} />
+                <View style={[styles.volumeRow, { borderBottomColor: theme.border }]}>
+                  <Ionicons name="volume-low" size={18} color={theme.textSecondary} />
+                  <View style={[styles.volumeTrack, { backgroundColor: theme.surfaceVariant }]}>
+                    {[0.25, 0.5, 0.75, 1.0].map((vol) => (
+                      <TouchableOpacity
+                        key={vol}
+                        style={[
+                          styles.volumeSegment,
+                          { backgroundColor: (notifSettings.volume ?? 1.0) >= vol ? theme.primary : 'transparent' },
+                        ]}
+                        onPress={() => updateNotifSettings({ volume: vol })}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={{ color: (notifSettings.volume ?? 1.0) >= vol ? '#fff' : theme.textSecondary, fontSize: 11, fontWeight: '600' }}>
+                          {vol === 1.0 ? '100%' : `${vol * 100}%`}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
                   </View>
+                  <Ionicons name="volume-high" size={18} color={theme.textSecondary} />
                 </View>
               )}
 
-              <View style={styles.toggleRow}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 }}>
-                  <View style={[styles.onlineIconBox, { backgroundColor: '#8B5CF620' }]}>
-                    <Ionicons name="phone-portrait" size={22} color={notifSettings.vibration ? '#8B5CF6' : theme.textSecondary} />
+              {/* Vibration */}
+              <View style={[styles.notifRow, { borderBottomColor: theme.border }]}>
+                <View style={styles.notifLeft}>
+                  <View style={[styles.notifIcon, { backgroundColor: '#8B5CF620' }]}>
+                    <Ionicons name="phone-portrait" size={20} color="#8B5CF6" />
                   </View>
                   <View>
-                    <Text style={[styles.toggleTitle, { color: theme.text }]}>Vibratsiya</Text>
-                    <Text style={[styles.toggleSub, { color: theme.textSecondary }]}>Buyurtma kelganda tebranish</Text>
+                    <Text style={[styles.notifTitle, { color: theme.text }]}>Vibratsiya</Text>
+                    <Text style={[styles.notifSub, { color: theme.textSecondary }]}>Buyurtma kelganda tebranish</Text>
                   </View>
                 </View>
                 <Switch
@@ -848,6 +838,46 @@ export default function CompanyDashboardScreen() {
                   onValueChange={(v) => updateNotifSettings({ vibration: v })}
                   trackColor={{ false: theme.border, true: '#8B5CF660' }}
                   thumbColor={notifSettings.vibration ? '#8B5CF6' : theme.textTertiary}
+                  disabled={!notifSettings.enabled}
+                />
+              </View>
+
+              {/* New orders */}
+              <View style={[styles.notifRow, { borderBottomColor: theme.border }]}>
+                <View style={styles.notifLeft}>
+                  <View style={[styles.notifIcon, { backgroundColor: '#10B98120' }]}>
+                    <Ionicons name="briefcase" size={20} color="#10B981" />
+                  </View>
+                  <View>
+                    <Text style={[styles.notifTitle, { color: theme.text }]}>Yangi buyurtmalar</Text>
+                    <Text style={[styles.notifSub, { color: theme.textSecondary }]}>Yangi buyurtma xabardorligi</Text>
+                  </View>
+                </View>
+                <Switch
+                  value={notifSettings.new_orders}
+                  onValueChange={(v) => updateNotifSettings({ new_orders: v })}
+                  trackColor={{ false: theme.border, true: '#10B98160' }}
+                  thumbColor={notifSettings.new_orders ? '#10B981' : theme.textTertiary}
+                  disabled={!notifSettings.enabled}
+                />
+              </View>
+
+              {/* Order updates */}
+              <View style={[styles.notifRow, { borderBottomColor: 'transparent' }]}>
+                <View style={styles.notifLeft}>
+                  <View style={[styles.notifIcon, { backgroundColor: '#3B82F620' }]}>
+                    <Ionicons name="refresh-circle" size={20} color="#3B82F6" />
+                  </View>
+                  <View>
+                    <Text style={[styles.notifTitle, { color: theme.text }]}>Buyurtma yangilanishlari</Text>
+                    <Text style={[styles.notifSub, { color: theme.textSecondary }]}>Status o'zgarganda xabar</Text>
+                  </View>
+                </View>
+                <Switch
+                  value={notifSettings.order_updates}
+                  onValueChange={(v) => updateNotifSettings({ order_updates: v })}
+                  trackColor={{ false: theme.border, true: '#3B82F660' }}
+                  thumbColor={notifSettings.order_updates ? '#3B82F6' : theme.textTertiary}
                   disabled={!notifSettings.enabled}
                 />
               </View>
@@ -913,7 +943,6 @@ export default function CompanyDashboardScreen() {
                     ) : null}
                   </View>
 
-                  {/* Phone only for accepted orders by this company */}
                   {selectedOrder.customer_phone && selectedOrder.worker_id === user?.id && selectedOrder.status !== 'pending' ? (
                     <TouchableOpacity
                       style={[styles.callBtn, { backgroundColor: '#10B981' + '15' }]}
@@ -942,7 +971,6 @@ export default function CompanyDashboardScreen() {
                     </Text>
                   </View>
 
-                  {/* Accept / Reject for pending */}
                   {selectedOrder.status === 'pending' && (
                     <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
                       <TouchableOpacity
@@ -964,7 +992,6 @@ export default function CompanyDashboardScreen() {
                     </View>
                   )}
 
-                  {/* Complete for accepted orders of this company */}
                   {(selectedOrder.status === 'accepted' || selectedOrder.status === 'in_progress') &&
                     selectedOrder.worker_id === user?.id && (
                       <TouchableOpacity
@@ -1087,6 +1114,47 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   locationText: { ...typography.body, flex: 1 },
+  notifRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+  },
+  notifLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    flex: 1,
+  },
+  notifIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifTitle: { ...typography.bodyMedium, fontWeight: '600' },
+  notifSub: { ...typography.small, marginTop: 2 },
+  volumeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+  },
+  volumeTrack: {
+    flex: 1,
+    flexDirection: 'row',
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+    height: 36,
+  },
+  volumeSegment: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
