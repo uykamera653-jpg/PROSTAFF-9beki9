@@ -173,7 +173,7 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
       selectedLocation,
       address || `${selectedLocation.latitude.toFixed(6)}, ${selectedLocation.longitude.toFixed(6)}`
     );
-    onClose();
+    // onClose is called by parent's onLocationSelect callback to avoid double-close
   };
 
   return (

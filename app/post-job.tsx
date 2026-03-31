@@ -358,6 +358,7 @@ export default function PostJobScreen() {
         visible={showLocationPicker}
         onClose={() => setShowLocationPicker(false)}
         onLocationSelect={(coords, address) => {
+          setShowLocationPicker(false);
           setLocation(address);
           setLatitude(coords.latitude);
           setLongitude(coords.longitude);

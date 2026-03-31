@@ -1163,6 +1163,7 @@ export default function CompanyDashboardScreen() {
         visible={showLocationPicker}
         onClose={() => setShowLocationPicker(false)}
         onLocationSelect={(coords) => {
+          setShowLocationPicker(false);
           setLocationCoords(coords);
           setShowLocationPicker(false);
         }}

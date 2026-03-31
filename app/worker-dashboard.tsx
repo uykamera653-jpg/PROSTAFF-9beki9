@@ -915,6 +915,7 @@ export default function WorkerDashboardScreen() {
         visible={showLocationPicker}
         onClose={() => setShowLocationPicker(false)}
         onLocationSelect={async (coords) => {
+          setShowLocationPicker(false);
           if (!user?.id) return;
           try {
             const { error } = await supabase

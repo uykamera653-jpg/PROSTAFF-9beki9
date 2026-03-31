@@ -340,6 +340,7 @@ export default function OrderServiceScreen() {
         visible={showLocationPicker}
         onClose={() => setShowLocationPicker(false)}
         onLocationSelect={(coords, address) => {
+          setShowLocationPicker(false);
           setLatitude(coords.latitude);
           setLongitude(coords.longitude);
           setLocation(address || `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`);
