@@ -60,6 +60,7 @@ interface WorkerProfile {
   rating: number;
   completed_orders: number;
   is_online: boolean;
+  avatar_url?: string;
 }
 
 export default function WorkerDashboardScreen() {
