@@ -22,6 +22,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useNotificationSettings } from '../hooks/useNotificationSettings';
 import { useUserRole } from '../hooks/useUserRole';
 import { useNotifications } from '../hooks/useNotifications';
+import { Image } from 'expo-image';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useAlert } from '../components/ui/WebAlert';
@@ -742,8 +743,17 @@ export default function WorkerDashboardScreen() {
         <Text style={[styles.headerTitle, { color: theme.text }]}>
           {t.workerDashboard || 'Ishchi paneli'}
         </Text>
-        <TouchableOpacity onPress={() => router.push('/worker-profile')}>
-          <Ionicons name="person-circle" size={28} color={theme.primary} />
+        <TouchableOpacity onPress={() => router.push('/worker-profile')} activeOpacity={0.8}>
+          {workerProfile?.avatar_url ? (
+            <Image
+              source={{ uri: workerProfile.avatar_url }}
+              style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 2, borderColor: theme.primary }}
+              contentFit="cover"
+              transition={200}
+            />
+          ) : (
+            <Ionicons name="person-circle" size={36} color={theme.primary} />
+          )}
         </TouchableOpacity>
       </View>
 
