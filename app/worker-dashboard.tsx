@@ -433,47 +433,51 @@ export default function WorkerDashboardScreen() {
     if (!user) return;
 
     try {
-      // First check if order is still pending and not assigned
+      // Check current order state
       const { data: currentOrder, error: checkError } = await supabase
         .from('orders')
-        .select('status, worker_id')
+        .select('status, accepted_workers')
         .eq('id', orderId)
         .single();
 
-      if (checkError) {
-        console.error('❌ Failed to check order:', checkError);
-        throw checkError;
-      }
+      if (checkError) throw checkError;
 
       if (currentOrder.status !== 'pending') {
-        showAlert('Xatolik', 'Bu buyurtma allaqachon boshqa ishchi tomonidan qabul qilingan');
-        loadOrders(); // Refresh list
+        showAlert('Xatolik', 'Bu buyurtma endi mavjud emas');
+        loadOrders();
         return;
       }
 
-      // Update order status
+      const existingAccepted: string[] = Array.isArray(currentOrder.accepted_workers)
+        ? currentOrder.accepted_workers
+        : [];
+
+      if (existingAccepted.includes(user.id)) {
+        showAlert("Ma'lumot", "Siz allaqachon bu buyurtmani qabul qildingiz. Buyurtmachi tanlashini kuting.");
+        setOrders(prev => prev.filter(o => o.id !== orderId));
+        return;
+      }
+
+      // Add this worker to accepted_workers array (order stays pending)
+      const updatedAccepted = [...existingAccepted, user.id];
+
       const { error } = await supabase
         .from('orders')
-        .update({
-          status: 'accepted',
-          worker_id: user.id,
-        })
+        .update({ accepted_workers: updatedAccepted })
         .eq('id', orderId)
-        .eq('status', 'pending'); // Double-check still pending
+        .eq('status', 'pending');
 
       if (error) throw error;
 
       // Immediately remove from pending list
       setOrders(prev => prev.filter(o => o.id !== orderId));
+      showAlert("Yuborildi!", "Qabul qildingiz. Buyurtmachi siz haqingizda xabardor bo'ladi va tanlasa bog'lanadi.");
 
-      showAlert('Muvaffaqiyatli!', 'Buyurtma qabul qilindi');
-      
-      // Reload orders to sync with database
       setTimeout(() => loadOrders(), 500);
     } catch (error: any) {
       console.error('❌ Failed to accept order:', error);
       showAlert('Xatolik', error.message || 'Buyurtmani qabul qilishda xatolik');
-      loadOrders(); // Refresh on error
+      loadOrders();
     }
   };
 

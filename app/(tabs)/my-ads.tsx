@@ -17,6 +17,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
 import { useAuth } from '../../hooks/useAuth';
@@ -45,6 +46,17 @@ interface CustomerOrder {
   worker_id?: string;
   target_company_id?: string;
   order_type?: string;
+  accepted_workers?: string[];
+}
+
+interface AcceptedWorkerInfo {
+  id: string;
+  full_name: string;
+  age?: number;
+  min_price: number;
+  max_price: number;
+  rating: number;
+  avatar_url?: string;
 }
 
 const TABS: { key: OrderStatus; label: string; color: string }[] = [
@@ -80,6 +92,14 @@ export default function MyAdsScreen() {
   const [reviewComment, setReviewComment] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewedOrders, setReviewedOrders] = useState<Set<string>>(new Set());
+
+  // Worker selection modal
+  const [showWorkerSelectModal, setShowWorkerSelectModal] = useState(false);
+  const [selectedOrderForWorker, setSelectedOrderForWorker] = useState<CustomerOrder | null>(null);
+  const [acceptedWorkers, setAcceptedWorkers] = useState<AcceptedWorkerInfo[]>([]);
+  const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([]);
+  const [loadingWorkers, setLoadingWorkers] = useState(false);
+  const [confirmingWorkers, setConfirmingWorkers] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -247,6 +267,86 @@ export default function MyAdsScreen() {
     }
   };
 
+  // Open worker selection modal
+  const openWorkerSelectModal = async (order: CustomerOrder) => {
+    setSelectedOrderForWorker(order);
+    setSelectedWorkerIds([]);
+    setShowWorkerSelectModal(true);
+    setLoadingWorkers(true);
+
+    try {
+      const workerIds: string[] = Array.isArray(order.accepted_workers) ? order.accepted_workers : [];
+      if (workerIds.length === 0) {
+        setAcceptedWorkers([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('workers')
+        .select('id, full_name, age, min_price, max_price, rating, avatar_url')
+        .in('id', workerIds);
+
+      if (error) throw error;
+      setAcceptedWorkers(data || []);
+    } catch (e) {
+      console.error('Failed to load workers:', e);
+      setAcceptedWorkers([]);
+    } finally {
+      setLoadingWorkers(false);
+    }
+  };
+
+  const toggleWorkerSelection = (workerId: string) => {
+    setSelectedWorkerIds(prev =>
+      prev.includes(workerId) ? prev.filter(id => id !== workerId) : [...prev, workerId]
+    );
+  };
+
+  // Customer confirms selected workers
+  const handleConfirmWorkers = async () => {
+    if (!selectedOrderForWorker || selectedWorkerIds.length === 0) return;
+
+    setConfirmingWorkers(true);
+    try {
+      const allWorkerIds: string[] = Array.isArray(selectedOrderForWorker.accepted_workers)
+        ? selectedOrderForWorker.accepted_workers
+        : [];
+
+      // 1. Update order: set first selected as worker_id, status = accepted, accepted_workers = selected
+      const { error: orderError } = await supabase
+        .from('orders')
+        .update({
+          status: 'accepted',
+          worker_id: selectedWorkerIds[0],
+          accepted_workers: selectedWorkerIds,
+        })
+        .eq('id', selectedOrderForWorker.id);
+
+      if (orderError) throw orderError;
+
+      // 2. Set selected workers offline (they are now assigned)
+      if (selectedWorkerIds.length > 0) {
+        await supabase
+          .from('workers')
+          .update({ is_online: false })
+          .in('id', selectedWorkerIds);
+      }
+
+      // 3. Unselected workers stay online — no change needed, they remain available
+
+      setShowWorkerSelectModal(false);
+      setSelectedOrderForWorker(null);
+      setSelectedWorkerIds([]);
+      loadOrders();
+
+      Alert.alert('Muvaffaqiyatli!', `${selectedWorkerIds.length} ta ishchi tanlandi. Ular siz bilan bog'lanadi.`);
+    } catch (error: any) {
+      Alert.alert('Xatolik', error.message || "Ishchilarni tasdiqlashda xatolik");
+    } finally {
+      setConfirmingWorkers(false);
+    }
+  };
+
   const openReviewModal = (order: CustomerOrder) => {
     setReviewOrder(order);
     setReviewRating(5);
@@ -296,6 +396,8 @@ export default function MyAdsScreen() {
     const statusColor = getStatusColor(item.status);
     const isCompanyOrder = item.order_type === 'company' && !!item.target_company_id;
     const alreadyReviewed = reviewedOrders.has(item.id);
+    const acceptedCount = Array.isArray(item.accepted_workers) ? item.accepted_workers.length : 0;
+    const isWorkerOrder = item.order_type !== 'company';
 
     return (
       <TouchableOpacity
@@ -344,6 +446,7 @@ export default function MyAdsScreen() {
             {item.description}
           </Text>
 
+          {/* Timer */}
           {item.status === 'pending' && timeRemaining > 0 && (
             <View style={[styles.timerContainer, { backgroundColor: theme.warning + '12' }]}>
               <Ionicons name="timer" size={16} color={theme.warning} />
@@ -358,6 +461,31 @@ export default function MyAdsScreen() {
               <Ionicons name="alert-circle" size={16} color={theme.error} />
               <Text style={[styles.timerText, { color: theme.error }]}>Muddati tugadi</Text>
             </View>
+          )}
+
+          {/* Accepted workers banner - for worker orders with acceptances */}
+          {item.status === 'pending' && isWorkerOrder && acceptedCount > 0 && (
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation?.();
+                openWorkerSelectModal(item);
+              }}
+              style={[styles.acceptedWorkersBanner, { backgroundColor: '#10B981' + '15', borderColor: '#10B981' }]}
+              activeOpacity={0.8}
+            >
+              <View style={styles.acceptedWorkersLeft}>
+                <Ionicons name="people" size={20} color="#10B981" />
+                <View>
+                  <Text style={[styles.acceptedWorkersTitle, { color: '#10B981' }]}>
+                    {acceptedCount} ishchi qabul qildi!
+                  </Text>
+                  <Text style={[styles.acceptedWorkersSub, { color: theme.textSecondary }]}>
+                    Birini yoki bir nechtasini tanlang
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#10B981" />
+            </TouchableOpacity>
           )}
 
           <View style={styles.detailRow}>
@@ -500,6 +628,137 @@ export default function MyAdsScreen() {
           }
         />
       )}
+
+      {/* Worker Selection Modal */}
+      <Modal
+        visible={showWorkerSelectModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowWorkerSelectModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.workerSelectModal, { backgroundColor: theme.surface }]}>
+            {/* Header */}
+            <View style={styles.workerSelectHeader}>
+              <Text style={[styles.workerSelectTitle, { color: theme.text }]}>
+                Ishchilarni tanlang
+              </Text>
+              <TouchableOpacity onPress={() => setShowWorkerSelectModal(false)}>
+                <Ionicons name="close" size={24} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.workerSelectSubtitle, { color: theme.textSecondary }]}>
+              Bir yoki bir nechta ishchini tanlang. Tanlanganlarga darhol xabar yuboriladi.
+            </Text>
+
+            {loadingWorkers ? (
+              <View style={styles.workerLoadingBox}>
+                <ActivityIndicator size="large" color={theme.primary} />
+                <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Yuklanmoqda...</Text>
+              </View>
+            ) : acceptedWorkers.length === 0 ? (
+              <View style={styles.workerLoadingBox}>
+                <Ionicons name="person-outline" size={48} color={theme.textTertiary} />
+                <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Ishchilar yo'q</Text>
+              </View>
+            ) : (
+              <ScrollView
+                style={styles.workerList}
+                showsVerticalScrollIndicator={false}
+              >
+                {acceptedWorkers.map((worker) => {
+                  const isSelected = selectedWorkerIds.includes(worker.id);
+                  return (
+                    <TouchableOpacity
+                      key={worker.id}
+                      style={[
+                        styles.workerCard,
+                        {
+                          backgroundColor: isSelected ? theme.primary + '10' : theme.surfaceVariant,
+                          borderColor: isSelected ? theme.primary : theme.border,
+                        },
+                      ]}
+                      onPress={() => toggleWorkerSelection(worker.id)}
+                      activeOpacity={0.8}
+                    >
+                      {/* Avatar */}
+                      <View style={styles.workerAvatar}>
+                        {worker.avatar_url ? (
+                          <Image
+                            source={{ uri: worker.avatar_url }}
+                            style={styles.workerAvatarImg}
+                            contentFit="cover"
+                            transition={200}
+                          />
+                        ) : (
+                          <View style={[styles.workerAvatarImg, { backgroundColor: theme.primary + '20', alignItems: 'center', justifyContent: 'center' }]}>
+                            <Ionicons name="person" size={28} color={theme.primary} />
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Info */}
+                      <View style={styles.workerInfo}>
+                        <Text style={[styles.workerName, { color: theme.text }]} numberOfLines={1}>
+                          {worker.full_name}
+                        </Text>
+                        {worker.age ? (
+                          <Text style={[styles.workerAge, { color: theme.textSecondary }]}>
+                            {worker.age} yosh
+                          </Text>
+                        ) : null}
+                        <View style={styles.workerMeta}>
+                          <Ionicons name="star" size={12} color="#F59E0B" />
+                          <Text style={[styles.workerRating, { color: theme.textSecondary }]}>
+                            {worker.rating.toFixed(1)}
+                          </Text>
+                          <Text style={[styles.workerPrice, { color: theme.primary }]}>
+                            {worker.min_price.toLocaleString()}–{worker.max_price.toLocaleString()} so'm/kun
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Selection indicator */}
+                      <View style={[
+                        styles.workerCheckbox,
+                        { borderColor: isSelected ? theme.primary : theme.border, backgroundColor: isSelected ? theme.primary : 'transparent' }
+                      ]}>
+                        {isSelected && <Ionicons name="checkmark" size={16} color="#fff" />}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {/* Confirm button */}
+            {!loadingWorkers && acceptedWorkers.length > 0 && (
+              <View style={styles.workerSelectActions}>
+                <Button
+                  title="Bekor qilish"
+                  onPress={() => setShowWorkerSelectModal(false)}
+                  variant="outline"
+                  style={{ flex: 1 }}
+                  disabled={confirmingWorkers}
+                />
+                <Button
+                  title={
+                    confirmingWorkers
+                      ? 'Tasdiqlanmoqda...'
+                      : selectedWorkerIds.length > 0
+                      ? `${selectedWorkerIds.length} ta ishchini tasdiqlash`
+                      : 'Ishchi tanlang'
+                  }
+                  onPress={handleConfirmWorkers}
+                  disabled={selectedWorkerIds.length === 0 || confirmingWorkers}
+                  loading={confirmingWorkers}
+                  style={{ flex: 2 }}
+                />
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Review Modal */}
       <Modal
@@ -702,6 +961,30 @@ const styles = StyleSheet.create({
     ...typography.small,
     fontWeight: '600',
   },
+  acceptedWorkersBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+    marginBottom: spacing.sm,
+  },
+  acceptedWorkersLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  acceptedWorkersTitle: {
+    ...typography.bodyMedium,
+    fontWeight: '700',
+  },
+  acceptedWorkersSub: {
+    ...typography.small,
+    marginTop: 2,
+  },
   rateBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -743,18 +1026,109 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   loadingText: { ...typography.body },
-  // Review Modal
+  // Modal base
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
+  // Worker Select Modal
+  workerSelectModal: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: spacing.xl,
+    maxHeight: '85%',
+  },
+  workerSelectHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  workerSelectTitle: {
+    ...typography.h3,
+    fontWeight: '700',
+  },
+  workerSelectSubtitle: {
+    ...typography.small,
+    marginBottom: spacing.lg,
+    lineHeight: 18,
+  },
+  workerLoadingBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xxl,
+    gap: spacing.md,
+  },
+  workerList: {
+    maxHeight: 380,
+  },
+  workerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+    marginBottom: spacing.sm,
+  },
+  workerAvatar: {
+    flexShrink: 0,
+  },
+  workerAvatarImg: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  workerInfo: {
+    flex: 1,
+    gap: spacing.xs / 2,
+  },
+  workerName: {
+    ...typography.bodyMedium,
+    fontWeight: '700',
+  },
+  workerAge: {
+    ...typography.small,
+  },
+  workerMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flexWrap: 'wrap',
+  },
+  workerRating: {
+    ...typography.small,
+    fontWeight: '600',
+    marginRight: spacing.xs,
+  },
+  workerPrice: {
+    ...typography.small,
+    fontWeight: '600',
+  },
+  workerCheckbox: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  workerSelectActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingTop: spacing.lg,
+  },
+  // Review Modal
   reviewModal: {
     width: '88%',
     maxWidth: 400,
     padding: spacing.xl,
     borderRadius: borderRadius.lg,
+    alignSelf: 'center',
+    marginTop: 'auto',
+    marginBottom: 'auto',
     elevation: 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },

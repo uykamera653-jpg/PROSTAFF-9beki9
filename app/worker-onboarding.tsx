@@ -39,6 +39,7 @@ export default function WorkerOnboardingScreen() {
 
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
+  const [age, setAge] = useState('');
   const [minPrice, setMinPrice] = useState('200000');
   const [maxPrice, setMaxPrice] = useState('300000');
   const [categories, setCategories] = useState<Category[]>([]);
@@ -98,6 +99,7 @@ export default function WorkerOnboardingScreen() {
         setIsEditMode(true);
         setFullName(worker.full_name || '');
         setPhone(worker.phone || '');
+        setAge(worker.age?.toString() || '');
         setMinPrice(worker.min_price?.toString() || '200000');
         setMaxPrice(worker.max_price?.toString() || '300000');
         setLatitude(worker.latitude || null);
@@ -163,6 +165,8 @@ export default function WorkerOnboardingScreen() {
         .single();
 
       // 2. Create or update worker profile
+      const parsedAge = parseInt(age) || null;
+
       if (existingWorker) {
         // Update existing profile
         const { error: workerError } = await supabase
@@ -170,6 +174,7 @@ export default function WorkerOnboardingScreen() {
           .update({
             full_name: fullName.trim(),
             phone: phone.trim(),
+            age: parsedAge,
             min_price: parseFloat(minPrice) || 200000,
             max_price: parseFloat(maxPrice) || 300000,
             latitude,
@@ -187,6 +192,7 @@ export default function WorkerOnboardingScreen() {
             id: user.id,
             full_name: fullName.trim(),
             phone: phone.trim(),
+            age: parsedAge,
             min_price: parseFloat(minPrice) || 200000,
             max_price: parseFloat(maxPrice) || 300000,
             is_online: false,
@@ -271,6 +277,14 @@ export default function WorkerOnboardingScreen() {
             onChangeText={setPhone}
             placeholder="Telefon raqam (+998901234567)"
             keyboardType="phone-pad"
+            editable={!loading}
+          />
+
+          <Input
+            value={age}
+            onChangeText={setAge}
+            placeholder="Yoshingiz (masalan: 25)"
+            keyboardType="numeric"
             editable={!loading}
           />
         </Card>

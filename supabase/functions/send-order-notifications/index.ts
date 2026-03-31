@@ -39,10 +39,10 @@ serve(async (req) => {
     const payload: OrderNotificationPayload = await req.json();
     console.log('📨 Sending notifications for order:', payload.orderId);
 
-    // Get order details including rejected_by
+    // Get order details including rejected_by and shown_to
     const { data: orderData, error: orderError } = await supabaseAdmin
       .from('orders')
-      .select('category_id, rejected_by')
+      .select('category_id, rejected_by, shown_to')
       .eq('id', payload.orderId)
       .single();
 
@@ -86,10 +86,14 @@ serve(async (req) => {
       throw new Error(`Failed to get workers: ${workersError.message}`);
     }
 
-    // Filter out rejected workers and calculate distances
+    // Get already shown_to workers for this order
+    const shownToWorkerIds: string[] = orderData.shown_to || [];
+    console.log(`👁️ Already shown to ${shownToWorkerIds.length} workers`);
+
+    // Filter out rejected and already-shown workers, calculate distances
     const MAX_DISTANCE_KM = 10;
     const nearbyWorkers = workers
-      .filter(w => !rejectedWorkerIds.includes(w.id))
+      .filter(w => !rejectedWorkerIds.includes(w.id) && !shownToWorkerIds.includes(w.id))
       .map(w => {
         const distance = calculateDistance(
           payload.latitude,
@@ -100,10 +104,11 @@ serve(async (req) => {
         return { ...w, distance };
       })
       .filter(w => w.distance <= MAX_DISTANCE_KM)
-      .sort((a, b) => a.distance - b.distance);
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 3); // Send to max 3 workers at a time
 
     const onlineWorkerIds = nearbyWorkers.map(w => w.id);
-    console.log(`🟢 ${onlineWorkerIds.length} online workers within ${MAX_DISTANCE_KM}km`);
+    console.log(`🟢 ${onlineWorkerIds.length} workers selected (max 3) within ${MAX_DISTANCE_KM}km`);
 
     if (onlineWorkerIds.length === 0) {
       return new Response(
@@ -161,6 +166,14 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Update shown_to array to track which workers received this order
+    const newShownToIds = [...new Set([...shownToWorkerIds, ...finalTokens.map(t => t.user_id)])];
+    await supabaseAdmin
+      .from('orders')
+      .update({ shown_to: newShownToIds })
+      .eq('id', payload.orderId);
+    console.log(`✅ Updated shown_to: ${newShownToIds.length} workers total`);
 
     // Send push notifications via Expo Push API
     const messages = finalTokens.map(token => {
