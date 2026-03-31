@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,8 +23,6 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { spacing, typography, borderRadius } from '../constants/theme';
 
-const { width } = Dimensions.get('window');
-
 export default function CompanyDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -38,6 +36,14 @@ export default function CompanyDetailScreen() {
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
+  const [screenWidth, setScreenWidth] = useState(() => Math.max(375, Dimensions.get('window').width));
+
+  useEffect(() => {
+    const sub = Dimensions.addEventListener('change', ({ window }) => {
+      setScreenWidth(Math.max(375, window.width));
+    });
+    return () => sub?.remove();
+  }, []);
 
   const companyId = params.id as string;
   const company = getCompanyById(companyId);
@@ -109,11 +115,11 @@ export default function CompanyDetailScreen() {
           showsHorizontalScrollIndicator={false}
           style={styles.imageGallery}
         >
-          {company.photoUrls.map((url, index) => (
+          {(company.photoUrls && company.photoUrls.length > 0 ? company.photoUrls : ['https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800']).map((url, index) => (
             <Image
               key={index}
               source={{ uri: url }}
-              style={styles.image}
+              style={[styles.image, { width: screenWidth }]}
               contentFit="cover"
             />
           ))}
@@ -191,7 +197,7 @@ export default function CompanyDetailScreen() {
             {t.services}
           </Text>
           <View style={styles.servicesList}>
-            {company.services.map((service, index) => (
+            {(company.services || []).map((service, index) => (
               <View
                 key={index}
                 style={[styles.serviceItem, { backgroundColor: theme.surfaceVariant }]}
@@ -356,7 +362,7 @@ const styles = StyleSheet.create({
     height: 300,
   },
   image: {
-    width: width,
+    width: 375,
     height: 300,
   },
   infoCard: {

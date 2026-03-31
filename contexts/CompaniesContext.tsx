@@ -73,15 +73,15 @@ export function CompaniesProvider({ children }: { children: ReactNode }) {
 
   const mapCompany = (company: any): Company => ({
     id: company.id,
-    name: company.company_name,
-    serviceType: 'Services',
+    name: company.company_name || '',
+    serviceType: company.service_type || 'Xizmat ko\'rsatish',
     description: company.description || '',
-    phoneNumber: company.phone,
-    address: 'Tashkent',
-    photoUrls: company.images || [],
-    services: [],
-    workingHours: '9:00 - 18:00',
-    experience: '0 yil',
+    phoneNumber: company.phone || '',
+    address: company.address || 'Toshkent',
+    photoUrls: Array.isArray(company.images) ? company.images : [],
+    services: Array.isArray(company.services) ? company.services : [],
+    workingHours: company.working_hours || '9:00 - 18:00',
+    experience: company.experience || '0 yil',
     rating: parseFloat(company.rating) || 0,
     avatarUrl: company.avatar_url || null,
   });
@@ -92,6 +92,7 @@ export function CompaniesProvider({ children }: { children: ReactNode }) {
         .from('companies')
         .select('*')
         .eq('is_online', true)
+        .eq('is_blocked', false)
         .order('rating', { ascending: false })
         .range(0, PAGE_SIZE - 1);
 
@@ -119,6 +120,7 @@ export function CompaniesProvider({ children }: { children: ReactNode }) {
         .from('companies')
         .select('*')
         .eq('is_online', true)
+        .eq('is_blocked', false)
         .order('rating', { ascending: false })
         .range(from, to);
 
