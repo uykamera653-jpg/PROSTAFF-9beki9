@@ -14,6 +14,7 @@ let MapContainer: any = null;
 let TileLayer: any = null;
 let MapMarker: any = null;
 let useMapEvents: any = null;
+let useMap: any = null;
 let L: any = null;
 let Icon: any = null;
 let DivIcon: any = null;
@@ -42,6 +43,7 @@ if (Platform.OS !== 'web') {
     TileLayer = Leaflet.TileLayer;
     MapMarker = Leaflet.Marker;
     useMapEvents = Leaflet.useMapEvents;
+    useMap = Leaflet.useMap;
     
     // Leaflet core for custom icons
     L = require('leaflet');
@@ -92,6 +94,7 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
   const [selectedLocation, setSelectedLocation] = useState(initialLocation || defaultLocation);
   const [address, setAddress] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const shouldCenterRef = React.useRef(false);
 
   useEffect(() => {
     if (visible && !initialLocation) {
@@ -111,6 +114,7 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
             };
+            shouldCenterRef.current = true;
             setSelectedLocation(coords);
             await getAddressFromCoords(coords);
             setIsLoading(false);
@@ -139,6 +143,7 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
       };
+      shouldCenterRef.current = true;
       setSelectedLocation(coords);
       await getAddressFromCoords(coords);
       setIsLoading(false);
@@ -254,6 +259,18 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
         iconAnchor: [20, 50],
       });
 
+      // MapCenterController: only flies to location when explicitly requested (locate button)
+      const MapCenterController = () => {
+        const map = useMap();
+        React.useEffect(() => {
+          if (shouldCenterRef.current) {
+            map.flyTo([selectedLocation.latitude, selectedLocation.longitude], 15);
+            shouldCenterRef.current = false;
+          }
+        }, [selectedLocation.latitude, selectedLocation.longitude]);
+        return null;
+      };
+
       // MapContent component to handle events and marker updates
       const MapContent = () => {
         useMapEvents({
@@ -292,6 +309,7 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; OpenStreetMap'
             />
+            <MapCenterController />
             <MapContent />
           </MapContainer>
         </div>
