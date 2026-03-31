@@ -51,7 +51,6 @@
         }
       ],
       "expo-web-browser",
-      "react-native-webview",
       [
         "expo-image-picker",
         {
