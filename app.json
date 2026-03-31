@@ -30,7 +30,8 @@
         "ACCESS_COARSE_LOCATION",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
-        "CAMERA"
+        "CAMERA",
+        "INTERNET"
       ]
     },
     "web": {
@@ -50,6 +51,7 @@
         }
       ],
       "expo-web-browser",
+      "react-native-webview",
       [
         "expo-image-picker",
         {

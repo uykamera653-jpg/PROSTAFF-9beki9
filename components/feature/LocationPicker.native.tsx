@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,11 @@ import {
   Modal,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import MapView, { Marker } from 'react-native-maps';
 import { useTheme } from '../../hooks/useTheme';
 import { Button } from '../ui/Button';
 import { spacing, typography, borderRadius } from '../../constants/theme';
@@ -47,11 +48,14 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
   const [selectedLocation, setSelectedLocation] = useState(initialLocation || DEFAULT_LOCATION);
   const [address, setAddress] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const mapRef = React.useRef<any>(null);
+  const webViewRef = useRef<any>(null);
 
   useEffect(() => {
     if (visible && !initialLocation) {
       getCurrentLocation();
+    } else if (visible && initialLocation) {
+      setSelectedLocation(initialLocation);
+      fetchAddress(initialLocation.latitude, initialLocation.longitude);
     }
   }, [visible]);
 
@@ -64,16 +68,11 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
         setIsLoading(false);
         return;
       }
-      const location = await Location.getCurrentPositionAsync({});
-      const coords = {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      };
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
       setSelectedLocation(coords);
-      if (mapRef.current) {
-        mapRef.current.animateToRegion({ ...coords, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 800);
-      }
-      await getAddress(coords);
+      moveMapTo(coords.latitude, coords.longitude);
+      await fetchAddress(coords.latitude, coords.longitude);
     } catch (e) {
       console.error('Location error:', e);
     } finally {
@@ -81,22 +80,42 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
     }
   };
 
-  const getAddress = async (coords: { latitude: number; longitude: number }) => {
+  const fetchAddress = async (lat: number, lng: number) => {
     try {
-      const results = await Location.reverseGeocodeAsync(coords);
+      const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
       if (results?.length > 0) {
         const r = results[0];
-        const parts = [r.street, r.city, r.region, r.country].filter(Boolean);
-        setAddress(parts.join(', '));
+        const parts = [r.street, r.city, r.region].filter(Boolean);
+        setAddress(parts.join(', ') || `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
       }
     } catch {
-      setAddress(`${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}`);
+      setAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
     }
   };
 
-  const handleMapPress = async (coords: { latitude: number; longitude: number }) => {
-    setSelectedLocation(coords);
-    await getAddress(coords);
+  const moveMapTo = (lat: number, lng: number) => {
+    if (webViewRef.current) {
+      webViewRef.current.injectJavaScript(`
+        if (window._map && window._marker) {
+          window._map.setView([${lat}, ${lng}], 15);
+          window._marker.setLatLng([${lat}, ${lng}]);
+        }
+        true;
+      `);
+    }
+  };
+
+  const handleMessage = async (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'locationSelected') {
+        const coords = { latitude: data.lat, longitude: data.lng };
+        setSelectedLocation(coords);
+        await fetchAddress(data.lat, data.lng);
+      }
+    } catch (e) {
+      console.error('WebView message error:', e);
+    }
   };
 
   const handleConfirm = () => {
@@ -104,8 +123,65 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
       selectedLocation,
       address || `${selectedLocation.latitude.toFixed(6)}, ${selectedLocation.longitude.toFixed(6)}`
     );
-    // onClose is called by parent's onLocationSelect callback to avoid double-close
   };
+
+  const mapHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  #map { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+  var lat = ${selectedLocation.latitude};
+  var lng = ${selectedLocation.longitude};
+
+  var map = L.map('map', { attributionControl: false }).setView([lat, lng], 15);
+  window._map = map;
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19
+  }).addTo(map);
+
+  var redIcon = L.divIcon({
+    html: '<div style="width:28px;height:28px;background:#FF4444;border-radius:50%;border:4px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:grab"></div>',
+    className: '',
+    iconSize: [28, 28],
+    iconAnchor: [14, 14]
+  });
+
+  var marker = L.marker([lat, lng], { icon: redIcon, draggable: true }).addTo(map);
+  window._marker = marker;
+
+  marker.on('dragend', function(e) {
+    var pos = e.target.getLatLng();
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'locationSelected',
+      lat: pos.lat,
+      lng: pos.lng
+    }));
+  });
+
+  map.on('click', function(e) {
+    marker.setLatLng(e.latlng);
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'locationSelected',
+      lat: e.latlng.lat,
+      lng: e.latlng.lng
+    }));
+  });
+</script>
+</body>
+</html>
+  `;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -116,31 +192,32 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
           </TouchableOpacity>
           <Text style={[styles.title, { color: theme.text }]}>Manzilni tanlang</Text>
           <TouchableOpacity onPress={getCurrentLocation} disabled={isLoading}>
-            <Ionicons name="locate" size={28} color={isLoading ? theme.textTertiary : theme.primary} />
+            <Ionicons
+              name="locate"
+              size={28}
+              color={isLoading ? theme.textTertiary : theme.primary}
+            />
           </TouchableOpacity>
         </View>
 
-        <MapView
-          ref={mapRef}
-          style={styles.map}
-          initialRegion={{ ...selectedLocation, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
-          onPress={(e: any) => handleMapPress(e.nativeEvent.coordinate)}
-          showsUserLocation={true}
-          showsMyLocationButton={false}
-        >
-          <Marker
-            coordinate={selectedLocation}
-            draggable
-            onDragEnd={(e: any) => handleMapPress(e.nativeEvent.coordinate)}
-            pinColor="#FF4444"
-          />
-        </MapView>
+        <WebView
+          ref={webViewRef}
+          source={{ html: mapHtml }}
+          style={{ flex: 1 }}
+          onMessage={handleMessage}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          originWhitelist={['*']}
+          mixedContentMode="always"
+        />
 
         <View style={[styles.footer, { backgroundColor: theme.surface }]}>
           {address ? (
             <View style={styles.addressRow}>
               <Ionicons name="location" size={20} color={theme.primary} />
-              <Text style={[styles.address, { color: theme.text }]} numberOfLines={2}>{address}</Text>
+              <Text style={[styles.address, { color: theme.text }]} numberOfLines={2}>
+                {address}
+              </Text>
             </View>
           ) : null}
           <Text style={[styles.coords, { color: theme.textSecondary }]}>
@@ -161,12 +238,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+    paddingTop: Platform.OS === 'ios' ? spacing.xl : spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.1)',
   },
   closeBtn: { padding: spacing.xs },
   title: { ...typography.h3, flex: 1, textAlign: 'center' },
-  map: { flex: 1 },
   footer: {
     padding: spacing.lg,
     borderTopWidth: 1,
