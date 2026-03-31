@@ -56,6 +56,7 @@ interface CompanyOrder {
   created_at: string;
   customer_id: string;
   worker_id?: string;
+  rejected_by?: string[];
   category?: { name_uz: string; icon: string };
   customer?: { name: string; email: string };
 }
@@ -156,21 +157,37 @@ export default function CompanyDashboardScreen() {
     try {
       setOrdersLoading(true);
 
-      // Load orders where this company is the assigned worker (via worker_id match)
-      // Companies receive orders from the "Xizmat ko'rsatish" section
-      const { data, error } = await supabase
+      let query = supabase
         .from('orders')
-        .select(`
-          *,
-          category:categories(name_uz, icon)
-        `)
+        .select('*, category:categories(name_uz, icon)')
         .order('created_at', { ascending: false })
         .limit(100);
 
+      if (ordersTab === 'pending') {
+        // All available pending orders (not yet accepted by anyone)
+        query = query.eq('status', 'pending');
+      } else if (ordersTab === 'accepted') {
+        // Orders accepted by this company
+        query = query.eq('worker_id', user!.id).in('status', ['accepted', 'in_progress']);
+      } else {
+        // Completed / cancelled orders for this company
+        query = query.eq('worker_id', user!.id).in('status', ['completed', 'cancelled']);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
 
+      // Filter out orders already rejected by this company (for pending tab)
+      let filtered = data || [];
+      if (ordersTab === 'pending') {
+        filtered = filtered.filter((o: any) => {
+          const rejectedBy = Array.isArray(o.rejected_by) ? o.rejected_by : [];
+          return !rejectedBy.includes(user!.id);
+        });
+      }
+
       // Enrich with customer info
-      const customerIds = [...new Set((data || []).map((o: any) => o.customer_id).filter(Boolean))];
+      const customerIds = [...new Set(filtered.map((o: any) => o.customer_id).filter(Boolean))];
       let customersMap: Record<string, any> = {};
       if (customerIds.length > 0) {
         const { data: customers } = await supabase
@@ -180,20 +197,8 @@ export default function CompanyDashboardScreen() {
         (customers || []).forEach((c: any) => (customersMap[c.id] = c));
       }
 
-      const enriched = (data || []).map((o: any) => ({
-        ...o,
-        customer: customersMap[o.customer_id],
-      }));
-
-      // Filter by status tab
-      const filtered =
-        ordersTab === 'pending'
-          ? enriched.filter((o: any) => o.status === 'pending')
-          : ordersTab === 'accepted'
-          ? enriched.filter((o: any) => o.status === 'accepted' || o.status === 'in_progress')
-          : enriched.filter((o: any) => o.status === 'completed' || o.status === 'cancelled');
-
-      setOrders(filtered);
+      const enriched = filtered.map((o: any) => ({ ...o, customer: customersMap[o.customer_id] }));
+      setOrders(enriched);
     } catch (error: any) {
       console.error('Failed to load orders:', error);
     } finally {
@@ -211,6 +216,105 @@ export default function CompanyDashboardScreen() {
         loadOrders();
       })
       .subscribe();
+  };
+
+  const handleAcceptOrder = async (orderId: string) => {
+    if (!user?.id) return;
+    try {
+      const { data: current, error: checkErr } = await supabase
+        .from('orders')
+        .select('status, worker_id')
+        .eq('id', orderId)
+        .single();
+
+      if (checkErr) throw checkErr;
+      if (current.status !== 'pending') {
+        showAlert('Xatolik', 'Bu buyurtma allaqachon qabul qilingan');
+        loadOrders();
+        return;
+      }
+
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'accepted', worker_id: user.id })
+        .eq('id', orderId)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      setShowOrderModal(false);
+      showAlert('Muvaffaqiyatli!', 'Buyurtma qabul qilindi');
+      setTimeout(() => loadOrders(), 500);
+    } catch (error: any) {
+      showAlert('Xatolik', error.message || 'Buyurtmani qabul qilishda xatolik');
+      loadOrders();
+    }
+  };
+
+  const handleRejectOrder = async (orderId: string) => {
+    if (!user?.id) return;
+    try {
+      const { data: order, error: fetchErr } = await supabase
+        .from('orders')
+        .select('rejected_by, status')
+        .eq('id', orderId)
+        .single();
+
+      if (fetchErr) throw fetchErr;
+      if (order.status !== 'pending') {
+        setOrders((prev) => prev.filter((o) => o.id !== orderId));
+        setShowOrderModal(false);
+        return;
+      }
+
+      const rejectedBy: string[] = Array.isArray(order.rejected_by) ? [...order.rejected_by] : [];
+      if (!rejectedBy.includes(user.id)) rejectedBy.push(user.id);
+
+      const { error } = await supabase
+        .from('orders')
+        .update({ rejected_by: rejectedBy })
+        .eq('id', orderId)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      setShowOrderModal(false);
+      showAlert('Rad etildi', 'Buyurtma rad etildi');
+      setTimeout(() => loadOrders(), 500);
+    } catch (error: any) {
+      showAlert('Xatolik', error.message || 'Buyurtmani rad etishda xatolik');
+      loadOrders();
+    }
+  };
+
+  const handleCompleteOrder = async (orderId: string) => {
+    const doComplete = async () => {
+      try {
+        const { error } = await supabase
+          .from('orders')
+          .update({ status: 'completed' })
+          .eq('id', orderId);
+        if (error) throw error;
+        if (profile) {
+          await supabase
+            .from('companies')
+            .update({ completed_orders: (profile.completed_orders || 0) + 1 })
+            .eq('id', user!.id);
+        }
+        setShowOrderModal(false);
+        showAlert('Muvaffaqiyatli!', 'Buyurtma bajarildi deb belgilandi');
+        loadOrders();
+        loadProfile();
+      } catch (error: any) {
+        showAlert('Xatolik', error.message || 'Buyurtmani yakunlashda xatolik');
+      }
+    };
+    showAlert('Tasdiqlash', 'Buyurtma bajarilganini tasdiqlaysizmi?', [
+      { text: "Yo'q", style: 'cancel' },
+      { text: 'Ha', onPress: doComplete },
+    ]);
   };
 
   const handleSaveProfile = async () => {
@@ -358,6 +462,28 @@ export default function CompanyDashboardScreen() {
           <Text style={[styles.orderDate, { color: theme.textTertiary }]}>
             {new Date(item.created_at).toLocaleString('uz-UZ')}
           </Text>
+
+          {/* Quick action buttons on card for pending */}
+          {item.status === 'pending' && (
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+              <TouchableOpacity
+                style={[styles.quickBtn, { borderColor: '#EF4444', flex: 1 }]}
+                onPress={(e) => { (e as any).stopPropagation?.(); handleRejectOrder(item.id); }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="close" size={16} color="#EF4444" />
+                <Text style={{ color: '#EF4444', fontSize: 13, fontWeight: '600' }}>Rad</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.quickBtn, { borderColor: '#10B981', backgroundColor: '#10B981' + '15', flex: 1 }]}
+                onPress={(e) => { (e as any).stopPropagation?.(); handleAcceptOrder(item.id); }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="checkmark" size={16} color="#10B981" />
+                <Text style={{ color: '#10B981', fontSize: 13, fontWeight: '600' }}>Qabul</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </Card>
       </TouchableOpacity>
     );
@@ -369,12 +495,12 @@ export default function CompanyDashboardScreen() {
       <View style={[styles.header, { paddingTop: insets.top + spacing.md, backgroundColor: theme.surface }]}>
         <View style={{ width: 40 }} />
         <Text style={[styles.headerTitle, { color: theme.text }]}>Firma paneli</Text>
-        <View style={styles.onlineIndicator}>
+        <View style={styles.onlineIndicatorBox}>
           <View style={[styles.onlineDot, { backgroundColor: isOnline ? '#10B981' : '#9CA3AF' }]} />
         </View>
       </View>
 
-      {/* Tabs */}
+      {/* Main Tabs */}
       <View style={[styles.tabsRow, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity
           style={[styles.mainTab, activeTab === 'orders' && { borderBottomColor: theme.primary, borderBottomWidth: 2 }]}
@@ -432,7 +558,7 @@ export default function CompanyDashboardScreen() {
             {[
               { key: 'pending', label: 'Yangi', color: '#F59E0B' },
               { key: 'accepted', label: 'Aktiv', color: '#3B82F6' },
-              { key: 'completed', label: "Yakunlangan", color: '#10B981' },
+              { key: 'completed', label: 'Yakunlangan', color: '#10B981' },
             ].map((tab) => (
               <TouchableOpacity
                 key={tab.key}
@@ -480,7 +606,6 @@ export default function CompanyDashboardScreen() {
       {/* PROFILE TAB */}
       {activeTab === 'profile' && (
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-          {/* Firma rasmlari */}
           {profile?.images && profile.images.length > 0 && (
             <View style={styles.imagesContainer}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg }}>
@@ -634,7 +759,6 @@ export default function CompanyDashboardScreen() {
             <ScrollView showsVerticalScrollIndicator={false}>
               {selectedOrder && (
                 <>
-                  {/* Status */}
                   <View style={[{ backgroundColor: getStatusColor(selectedOrder.status) + '15', borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.md }]}>
                     <Text style={{ color: getStatusColor(selectedOrder.status), fontWeight: '700', fontSize: 16 }}>
                       {getStatusLabel(selectedOrder.status)}
@@ -654,7 +778,8 @@ export default function CompanyDashboardScreen() {
                     ) : null}
                   </View>
 
-                  {selectedOrder.customer_phone ? (
+                  {/* Phone only for accepted orders by this company */}
+                  {selectedOrder.customer_phone && selectedOrder.worker_id === user?.id && selectedOrder.status !== 'pending' ? (
                     <TouchableOpacity
                       style={[styles.callBtn, { backgroundColor: '#10B981' + '15' }]}
                       onPress={() => Linking.openURL(`tel:${selectedOrder.customer_phone}`)}
@@ -681,6 +806,41 @@ export default function CompanyDashboardScreen() {
                       {new Date(selectedOrder.created_at).toLocaleString('uz-UZ')}
                     </Text>
                   </View>
+
+                  {/* Accept / Reject for pending */}
+                  {selectedOrder.status === 'pending' && (
+                    <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+                      <TouchableOpacity
+                        style={[styles.actionBtn, { borderColor: '#EF4444', flex: 1 }]}
+                        onPress={() => handleRejectOrder(selectedOrder.id)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="close" size={18} color="#EF4444" />
+                        <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 15 }}>Rad etish</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.actionBtn, { backgroundColor: '#10B981' + '15', borderColor: '#10B981', flex: 1 }]}
+                        onPress={() => handleAcceptOrder(selectedOrder.id)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="checkmark" size={18} color="#10B981" />
+                        <Text style={{ color: '#10B981', fontWeight: '700', fontSize: 15 }}>Qabul qilish</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Complete for accepted orders of this company */}
+                  {(selectedOrder.status === 'accepted' || selectedOrder.status === 'in_progress') &&
+                    selectedOrder.worker_id === user?.id && (
+                      <TouchableOpacity
+                        style={[styles.actionBtn, { backgroundColor: theme.primary + '15', borderColor: theme.primary, marginTop: spacing.md }]}
+                        onPress={() => handleCompleteOrder(selectedOrder.id)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="checkmark-done" size={18} color={theme.primary} />
+                        <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 15 }}>Bajarildi</Text>
+                      </TouchableOpacity>
+                    )}
                 </>
               )}
             </ScrollView>
@@ -716,7 +876,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   headerTitle: { ...typography.h3, flex: 1, textAlign: 'center' },
-  onlineIndicator: { width: 40, alignItems: 'flex-end' },
+  onlineIndicatorBox: { width: 40, alignItems: 'flex-end' },
   onlineDot: { width: 10, height: 10, borderRadius: 5 },
   tabsRow: {
     flexDirection: 'row',
@@ -762,6 +922,15 @@ const styles = StyleSheet.create({
   orderInfoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs / 2 },
   orderInfoText: { ...typography.small, flex: 1 },
   orderDate: { ...typography.small, textAlign: 'right', marginTop: spacing.xs },
+  quickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+  },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 80, gap: spacing.md },
   emptyText: { ...typography.body },
@@ -821,5 +990,14 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
   },
 });
