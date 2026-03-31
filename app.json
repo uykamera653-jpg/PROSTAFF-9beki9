@@ -6,7 +6,6 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/logo.png",
-    "scheme": "onspaceapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -14,7 +13,9 @@
       "bundleIdentifier": "com.prostaff.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Bu ilova lokatsiyangizni xaritada ko'rsatish uchun foydalanadi.",
-        "NSLocationAlwaysUsageDescription": "Bu ilova lokatsiyangizni xaritada ko'rsatish uchun foydalanadi."
+        "NSLocationAlwaysUsageDescription": "Bu ilova lokatsiyangizni xaritada ko'rsatish uchun foydalanadi.",
+        "NSPhotoLibraryUsageDescription": "Bu ilova rasmlarni yuklash uchun galereya ruxsatini so'raydi.",
+        "NSCameraUsageDescription": "Bu ilova rasm olish uchun kamera ruxsatini so'raydi."
       }
     },
     "android": {
@@ -26,7 +27,10 @@
       "package": "com.prostaff.app",
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "CAMERA"
       ]
     },
     "web": {
@@ -47,11 +51,18 @@
       ],
       "expo-web-browser",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Bu ilova rasmlarni yuklash uchun galereya ruxsatini so'raydi.",
+          "cameraPermission": "Bu ilova rasm olish uchun kamera ruxsatini so'raydi."
+        }
+      ],
+      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Bu ilova lokatsiyangizni xaritada ko'rsatish uchun foydalanadi."
         }
-      ],
+      ]
     ],
     "experiments": {
       "typedRoutes": true
