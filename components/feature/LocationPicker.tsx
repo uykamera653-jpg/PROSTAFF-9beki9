@@ -95,6 +95,7 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
   const [address, setAddress] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const shouldCenterRef = React.useRef(false);
+  const mapViewRef = React.useRef<any>(null);
 
   useEffect(() => {
     if (visible && !initialLocation) {
@@ -145,6 +146,14 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
       };
       shouldCenterRef.current = true;
       setSelectedLocation(coords);
+      // APK: xaritani yangi joylashuvga ko'chirish
+      if (mapViewRef.current) {
+        mapViewRef.current.animateToRegion({
+          ...coords,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        }, 800);
+      }
       await getAddressFromCoords(coords);
       setIsLoading(false);
     } catch (error) {
@@ -189,6 +198,7 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
     if (Platform.OS !== 'web' && MapView) {
       return (
         <MapView
+          ref={mapViewRef}
           style={styles.map}
           initialRegion={{
             ...selectedLocation,
@@ -196,18 +206,16 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
             longitudeDelta: 0.01,
           }}
           onPress={(e: any) => handleMapPress(e.nativeEvent.coordinate)}
+          showsUserLocation={true}
+          showsMyLocationButton={false}
         >
           <Marker 
             coordinate={selectedLocation}
             draggable
             onDragEnd={(e: any) => handleMapPress(e.nativeEvent.coordinate)}
             pinColor="#FF4444"
-          >
-            <View style={styles.customMarker}>
-              <View style={styles.markerDot} />
-              <View style={styles.markerPin} />
-            </View>
-          </Marker>
+            anchor={{ x: 0.5, y: 1.0 }}
+          />
         </MapView>
       );
     }
