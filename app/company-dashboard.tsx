@@ -61,6 +61,7 @@ interface CompanyOrder {
   created_at: string;
   customer_id: string;
   worker_id?: string;
+  target_company_id?: string;
   rejected_by?: string[];
   category?: { name_uz: string; icon: string };
   customer?: { name: string; email: string };
@@ -182,9 +183,9 @@ export default function CompanyDashboardScreen() {
           .eq('order_type', 'company')
           .eq('target_company_id', user!.id);
       } else if (ordersTab === 'accepted') {
-        query = query.eq('worker_id', user!.id).in('status', ['accepted', 'in_progress']);
+        query = query.eq('target_company_id', user!.id).in('status', ['accepted', 'in_progress']);
       } else {
-        query = query.eq('worker_id', user!.id).in('status', ['completed', 'cancelled']);
+        query = query.eq('target_company_id', user!.id).in('status', ['completed', 'cancelled']);
       }
 
       const { data, error } = await query;
@@ -280,9 +281,10 @@ export default function CompanyDashboardScreen() {
 
       const { error } = await supabase
         .from('orders')
-        .update({ status: 'accepted', worker_id: user.id })
+        .update({ status: 'accepted' })
         .eq('id', orderId)
-        .eq('status', 'pending');
+        .eq('status', 'pending')
+        .eq('target_company_id', user.id);
 
       if (error) throw error;
 
@@ -1042,7 +1044,7 @@ export default function CompanyDashboardScreen() {
                     ) : null}
                   </View>
 
-                  {selectedOrder.customer_phone && selectedOrder.worker_id === user?.id && selectedOrder.status !== 'pending' ? (
+                  {selectedOrder.customer_phone && selectedOrder.status !== 'pending' ? (
                     <TouchableOpacity
                       style={[styles.callBtn, { backgroundColor: '#10B981' + '15' }]}
                       onPress={() => Linking.openURL(`tel:${selectedOrder.customer_phone}`)}
@@ -1091,8 +1093,7 @@ export default function CompanyDashboardScreen() {
                     </View>
                   )}
 
-                  {(selectedOrder.status === 'accepted' || selectedOrder.status === 'in_progress') &&
-                    selectedOrder.worker_id === user?.id && (
+                  {(selectedOrder.status === 'accepted' || selectedOrder.status === 'in_progress') && (
                       <TouchableOpacity
                         style={[styles.actionBtn, { backgroundColor: theme.primary + '15', borderColor: theme.primary, marginTop: spacing.md }]}
                         onPress={() => handleCompleteOrder(selectedOrder.id)}
