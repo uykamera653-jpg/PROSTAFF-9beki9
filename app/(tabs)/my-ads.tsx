@@ -60,6 +60,10 @@ export default function MyAdsScreen() {
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const PAGE_SIZE = 20;
   const [orderTimers, setOrderTimers] = useState<{ [orderId: string]: number }>({});
 
   useEffect(() => {
@@ -97,14 +101,42 @@ export default function MyAdsScreen() {
         .select('*')
         .eq('customer_id', user.id)
         .eq('status', activeTab)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(0, PAGE_SIZE - 1);
       if (error) throw error;
       setOrders(data || []);
+      setCurrentPage(0);
+      setHasMore((data || []).length === PAGE_SIZE);
     } catch (error: any) {
       console.error('Error loading orders:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const loadMoreOrders = async () => {
+    if (!user?.id || isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    try {
+      const nextPage = currentPage + 1;
+      const from = nextPage * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('customer_id', user.id)
+        .eq('status', activeTab)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+      if (error) throw error;
+      setOrders((prev) => [...prev, ...(data || [])]);
+      setCurrentPage(nextPage);
+      setHasMore((data || []).length === PAGE_SIZE);
+    } catch (error: any) {
+      console.error('Error loading more orders:', error);
+    } finally {
+      setIsLoadingMore(false);
     }
   };
 
@@ -352,6 +384,22 @@ export default function MyAdsScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          onEndReached={loadMoreOrders}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={
+            isLoadingMore ? (
+              <View style={styles.footerLoader}>
+                <ActivityIndicator size="small" color={theme.primary} />
+                <Text style={[styles.footerLoaderText, { color: theme.textSecondary }]}>
+                  Ko'proq yuklanmoqda...
+                </Text>
+              </View>
+            ) : !hasMore && orders.length > 0 ? (
+              <Text style={[styles.noMoreText, { color: theme.textTertiary }]}>
+                Barcha buyurtmalar ko'rsatildi
+              </Text>
+            ) : null
+          }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -485,6 +533,19 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   emptyText: { ...typography.body },
+  footerLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+  },
+  footerLoaderText: { ...typography.small },
+  noMoreText: {
+    ...typography.small,
+    textAlign: 'center',
+    paddingVertical: spacing.lg,
+  },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',

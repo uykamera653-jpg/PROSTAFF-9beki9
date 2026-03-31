@@ -16,18 +16,26 @@ interface AddOrderParams {
 
 interface CompaniesContextType {
   companies: Company[];
+  hasMore: boolean;
+  isLoadingMore: boolean;
   getCompanyById: (companyId: string) => Company | undefined;
   getCompanyOrders: (companyId: string) => any[];
   getUserOrders: (userId: string) => any[];
   addOrder: (params: AddOrderParams) => Promise<void>;
   refetch: () => Promise<void>;
+  loadMore: () => Promise<void>;
 }
 
 export const CompaniesContext = createContext<CompaniesContextType | undefined>(undefined);
 
+const PAGE_SIZE = 20;
+
 export function CompaniesProvider({ children }: { children: ReactNode }) {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
 
   useEffect(() => {
     // Delay initial fetch to speed up app loading
@@ -63,39 +71,68 @@ export function CompaniesProvider({ children }: { children: ReactNode }) {
     };
   }, [isInitialized]);
 
+  const mapCompany = (company: any): Company => ({
+    id: company.id,
+    name: company.company_name,
+    serviceType: 'Services',
+    description: company.description || '',
+    phoneNumber: company.phone,
+    address: 'Tashkent',
+    photoUrls: company.images || [],
+    services: [],
+    workingHours: '9:00 - 18:00',
+    experience: '0 yil',
+    rating: parseFloat(company.rating) || 0,
+    avatarUrl: company.avatar_url || null,
+  });
+
   const fetchCompanies = async () => {
     try {
-      // Fetch only online companies
       const { data, error } = await supabase
         .from('companies')
         .select('*')
         .eq('is_online', true)
-        .order('rating', { ascending: false });
+        .order('rating', { ascending: false })
+        .range(0, PAGE_SIZE - 1);
 
-      if (error) {
-        return;
-      }
+      if (error) return;
 
       if (data) {
-        const mappedCompanies: Company[] = data.map((company) => ({
-          id: company.id,
-          name: company.company_name,
-          serviceType: 'Services',
-          description: company.description || '',
-          phoneNumber: company.phone,
-          address: 'Tashkent',
-          photoUrls: company.images || [],
-          services: [],
-          workingHours: '9:00 - 18:00',
-          experience: '0 yil',
-          rating: parseFloat(company.rating) || 0,
-          avatarUrl: company.avatar_url || null,
-        }));
-
-        setCompanies(mappedCompanies);
+        setCompanies(data.map(mapCompany));
+        setCurrentPage(0);
+        setHasMore(data.length === PAGE_SIZE);
       }
     } catch (error) {
       // Silent error handling
+    }
+  };
+
+  const loadMore = async () => {
+    if (isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    try {
+      const nextPage = currentPage + 1;
+      const from = nextPage * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('is_online', true)
+        .order('rating', { ascending: false })
+        .range(from, to);
+
+      if (error) return;
+
+      if (data) {
+        setCompanies((prev) => [...prev, ...data.map(mapCompany)]);
+        setCurrentPage(nextPage);
+        setHasMore(data.length === PAGE_SIZE);
+      }
+    } catch (error) {
+      // Silent error handling
+    } finally {
+      setIsLoadingMore(false);
     }
   };
 
@@ -142,11 +179,14 @@ export function CompaniesProvider({ children }: { children: ReactNode }) {
     <CompaniesContext.Provider
       value={{
         companies,
+        hasMore,
+        isLoadingMore,
         getCompanyById,
         getCompanyOrders,
         getUserOrders,
         addOrder,
         refetch: fetchCompanies,
+        loadMore,
       }}
     >
       {children}

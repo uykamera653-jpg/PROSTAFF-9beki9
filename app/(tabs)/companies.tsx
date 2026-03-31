@@ -17,7 +17,7 @@ export default function CompaniesScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { t } = useTranslation();
-  const { companies, refetch } = useCompanies();
+  const { companies, refetch, hasMore, isLoadingMore, loadMore } = useCompanies();
   const { user } = useAuth();
   const { addFavorite, removeFavorite, isFavorite } = useFavorites();
 
@@ -194,6 +194,26 @@ export default function CompaniesScreen() {
             contentContainerStyle={styles.list}
             onRefresh={handleRefresh}
             refreshing={isRefreshing}
+            onEndReached={() => {
+              if (!searchQuery && selectedCategory === 'all') {
+                loadMore();
+              }
+            }}
+            onEndReachedThreshold={0.3}
+            ListFooterComponent={
+              isLoadingMore ? (
+                <View style={styles.footerLoader}>
+                  <ActivityIndicator size="small" color={theme.primary} />
+                  <Text style={[styles.footerLoaderText, { color: theme.textSecondary }]}>
+                    Ko'proq yuklanmoqda...
+                  </Text>
+                </View>
+              ) : !hasMore && filteredCompanies.length > 0 ? (
+                <Text style={[styles.noMoreText, { color: theme.textTertiary }]}>
+                  Barcha firmalar ko'rsatildi
+                </Text>
+              ) : null
+            }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Ionicons name="business-outline" size={64} color={theme.textTertiary} />
@@ -292,6 +312,19 @@ const styles = StyleSheet.create({
   categoryChipText: {
     ...typography.bodyMedium,
     fontSize: 14,
+  },
+  footerLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+  },
+  footerLoaderText: { ...typography.small },
+  noMoreText: {
+    ...typography.small,
+    textAlign: 'center',
+    paddingVertical: spacing.lg,
   },
   loadingContainer: {
     flex: 1,
