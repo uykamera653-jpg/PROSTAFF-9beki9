@@ -46,6 +46,25 @@ interface Worker {
   created_at: string;
 }
 
+interface AdminOrder {
+  id: string;
+  title: string;
+  description: string;
+  location: string;
+  latitude: number | null;
+  longitude: number | null;
+  status: string;
+  customer_phone: string | null;
+  created_at: string;
+  updated_at: string;
+  customer_id: string;
+  worker_id: string | null;
+  category_id: string;
+  customer?: { name: string; email: string };
+  worker?: { full_name: string; phone: string };
+  category?: { name_uz: string; icon: string };
+}
+
 interface Company {
   id: string;
   company_name: string;
@@ -77,11 +96,67 @@ export default function AdminPanelScreen() {
   const hasCheckedAuth = useRef(false);
 
   // Config management states
-  const [activeTab, setActiveTab] = useState<'users' | 'workers' | 'companies' | 'config'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'workers' | 'companies' | 'orders' | 'config'>('users');
   const { configs, refreshConfigs } = useAppConfig();
   const [selectedConfig, setSelectedConfig] = useState<AppConfig | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [configValue, setConfigValue] = useState('');
+
+  // Orders history states
+  const [allOrders, setAllOrders] = useState<AdminOrder[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersFilter, setOrdersFilter] = useState<string>('all');
+  const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
+
+  const fetchAllOrders = async () => {
+    try {
+      setOrdersLoading(true);
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          category:categories(name_uz, icon)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      if (error) throw error;
+
+      const orders = data || [];
+
+      // Fetch customer and worker info
+      const customerIds = [...new Set(orders.map((o: any) => o.customer_id).filter(Boolean))];
+      const workerIds = [...new Set(orders.map((o: any) => o.worker_id).filter(Boolean))];
+
+      const [customersRes, workersRes] = await Promise.all([
+        customerIds.length > 0
+          ? supabase.from('user_profiles').select('id, name, email').in('id', customerIds as string[])
+          : { data: [] },
+        workerIds.length > 0
+          ? supabase.from('workers').select('id, full_name, phone').in('id', workerIds as string[])
+          : { data: [] },
+      ]);
+
+      const customersMap: Record<string, any> = {};
+      const workersMap: Record<string, any> = {};
+      (customersRes.data || []).forEach((c: any) => (customersMap[c.id] = c));
+      (workersRes.data || []).forEach((w: any) => (workersMap[w.id] = w));
+
+      const enriched = orders.map((o: any) => ({
+        ...o,
+        customer: customersMap[o.customer_id],
+        worker: o.worker_id ? workersMap[o.worker_id] : null,
+      }));
+
+      setAllOrders(enriched);
+    } catch (error: any) {
+      console.error('Failed to fetch orders:', error);
+      showAlert('Xatolik', 'Buyurtmalarni yuklashda xatolik');
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
 
   // Auth check effect - only redirect if not authorized
   useEffect(() => {
@@ -101,6 +176,7 @@ export default function AdminPanelScreen() {
     fetchUsers();
     fetchWorkers();
     fetchCompanies();
+    fetchAllOrders();
 
     // Setup real-time subscription for all tables
     channelRef.current = supabase
@@ -511,6 +587,7 @@ export default function AdminPanelScreen() {
             if (activeTab === 'users') fetchUsers();
             else if (activeTab === 'workers') fetchWorkers();
             else if (activeTab === 'companies') fetchCompanies();
+            else if (activeTab === 'orders') fetchAllOrders();
             else refreshConfigs();
           }}>
             <Ionicons name="refresh" size={24} color={theme.primary} />
@@ -571,6 +648,23 @@ export default function AdminPanelScreen() {
           />
           <Text style={[styles.mainTabText, { color: activeTab === 'companies' ? '#FFFFFF' : theme.primary }]}>
             Firmalar
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.mainTab,
+            activeTab === 'orders' && { backgroundColor: theme.primary, borderColor: theme.primary },
+          ]}
+          onPress={() => { setActiveTab('orders'); fetchAllOrders(); }}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="receipt"
+            size={18}
+            color={activeTab === 'orders' ? '#FFFFFF' : theme.primary}
+          />
+          <Text style={[styles.mainTabText, { color: activeTab === 'orders' ? '#FFFFFF' : theme.primary }]}>
+            Buyurtmalar
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -783,6 +877,144 @@ export default function AdminPanelScreen() {
             </View>
           }
         />
+      ) : activeTab === 'orders' ? (
+        <View style={{ flex: 1 }}>
+          {/* Status filter */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flexGrow: 0, paddingVertical: spacing.sm }}
+            contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg }}
+          >
+            {[
+              { key: 'all', label: 'Barchasi', color: '#6B7280' },
+              { key: 'pending', label: 'Kutilmoqda', color: '#F59E0B' },
+              { key: 'accepted', label: 'Qabul qilindi', color: '#3B82F6' },
+              { key: 'in_progress', label: 'Jarayonda', color: '#8B5CF6' },
+              { key: 'completed', label: 'Bajarildi', color: '#10B981' },
+              { key: 'cancelled', label: 'Bekor qilindi', color: '#EF4444' },
+            ].map((f) => (
+              <TouchableOpacity
+                key={f.key}
+                style={[
+                  styles.filterChip,
+                  {
+                    backgroundColor: ordersFilter === f.key ? f.color : 'transparent',
+                    borderColor: f.color,
+                  },
+                ]}
+                onPress={() => setOrdersFilter(f.key)}
+                activeOpacity={0.75}
+              >
+                <Text style={{ color: ordersFilter === f.key ? '#FFF' : f.color, fontSize: 12, fontWeight: '600' }}>
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {ordersLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={theme.primary} />
+            </View>
+          ) : (
+            <FlatList
+              data={ordersFilter === 'all' ? allOrders : allOrders.filter((o) => o.status === ordersFilter)}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.usersList}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => {
+                const statusColors: Record<string, string> = {
+                  pending: '#F59E0B',
+                  accepted: '#3B82F6',
+                  in_progress: '#8B5CF6',
+                  completed: '#10B981',
+                  cancelled: '#EF4444',
+                };
+                const statusLabels: Record<string, string> = {
+                  pending: 'Kutilmoqda',
+                  accepted: 'Qabul qilindi',
+                  in_progress: 'Jarayonda',
+                  completed: 'Bajarildi',
+                  cancelled: 'Bekor qilindi',
+                };
+                const sColor = statusColors[item.status] || '#6B7280';
+                return (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => { setSelectedOrder(item); setShowOrderModal(true); }}
+                  >
+                    <Card style={styles.userCard}>
+                      {/* Header */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm, gap: spacing.sm }}>
+                        <Text style={{ fontSize: 22 }}>{item.category?.icon || '📋'}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.userName, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
+                          <Text style={[styles.userEmail, { color: theme.textSecondary }]} numberOfLines={1}>
+                            {item.category?.name_uz || 'Kategoriya'}
+                          </Text>
+                        </View>
+                        <View style={[styles.roleBadge, { backgroundColor: sColor + '20' }]}>
+                          <Text style={[styles.roleText, { color: sColor }]}>
+                            {statusLabels[item.status] || item.status}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Buyurtmachi */}
+                      <View style={styles.orderInfoRow}>
+                        <Ionicons name="person-outline" size={14} color={theme.primary} />
+                        <Text style={[styles.orderInfoText, { color: theme.text }]}>
+                          {item.customer?.name || 'Noma\'lum'}
+                        </Text>
+                        {item.customer?.email ? (
+                          <Text style={[styles.orderInfoSub, { color: theme.textSecondary }]} numberOfLines={1}>
+                            · {item.customer.email}
+                          </Text>
+                        ) : null}
+                      </View>
+
+                      {/* Ishchi */}
+                      <View style={styles.orderInfoRow}>
+                        <Ionicons name="hammer-outline" size={14} color={item.worker ? theme.success : theme.textTertiary} />
+                        <Text style={[styles.orderInfoText, { color: item.worker ? theme.text : theme.textTertiary }]}>
+                          {item.worker ? item.worker.full_name : 'Ishchi tayinlanmagan'}
+                        </Text>
+                        {item.worker?.phone ? (
+                          <Text style={[styles.orderInfoSub, { color: theme.textSecondary }]}>
+                            · {item.worker.phone}
+                          </Text>
+                        ) : null}
+                      </View>
+
+                      {/* Manzil */}
+                      <View style={styles.orderInfoRow}>
+                        <Ionicons name="location-outline" size={14} color={theme.warning} />
+                        <Text style={[styles.orderInfoText, { color: theme.textSecondary }]} numberOfLines={1}>
+                          {item.location && !/^-?\d+\./.test(item.location)
+                            ? item.location
+                            : item.latitude
+                            ? `${item.latitude.toFixed(5)}, ${item.longitude?.toFixed(5)}`
+                            : 'Manzil yo\'q'}
+                        </Text>
+                      </View>
+
+                      <Text style={[styles.userEmail, { color: theme.textTertiary, textAlign: 'right', marginTop: spacing.xs }]}>
+                        {new Date(item.created_at).toLocaleString('uz-UZ')}
+                      </Text>
+                    </Card>
+                  </TouchableOpacity>
+                );
+              }}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="receipt-outline" size={64} color={theme.textTertiary} />
+                  <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Buyurtmalar topilmadi</Text>
+                </View>
+              }
+            />
+          )}
+        </View>
       ) : (
         <FlatList
           data={configs}
@@ -918,6 +1150,88 @@ export default function AdminPanelScreen() {
           </View>
         </View>
       </Modal>
+      {/* Order Detail Modal */}
+      <Modal visible={showOrderModal} transparent animationType="fade" onRequestClose={() => setShowOrderModal(false)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity style={styles.modalOverlayTouch} activeOpacity={1} onPress={() => setShowOrderModal(false)} />
+          <View style={[styles.orderModalContent, { backgroundColor: theme.surface }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg }}>
+              <Text style={[styles.modalTitle, { color: theme.text, marginBottom: 0 }]}>
+                {selectedOrder?.category?.icon} {selectedOrder?.title}
+              </Text>
+              <TouchableOpacity onPress={() => setShowOrderModal(false)}>
+                <Ionicons name="close" size={24} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Status */}
+              {selectedOrder && (() => {
+                const statusColors: Record<string, string> = { pending: '#F59E0B', accepted: '#3B82F6', in_progress: '#8B5CF6', completed: '#10B981', cancelled: '#EF4444' };
+                const statusLabels: Record<string, string> = { pending: 'Kutilmoqda', accepted: 'Qabul qilindi', in_progress: 'Jarayonda', completed: 'Bajarildi', cancelled: 'Bekor qilindi' };
+                const sc = statusColors[selectedOrder.status] || '#6B7280';
+                return (
+                  <View style={[styles.modalSection, { backgroundColor: sc + '15', borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.md }]}>
+                    <Text style={{ color: sc, fontWeight: '700', fontSize: 16 }}>{statusLabels[selectedOrder.status]}</Text>
+                  </View>
+                );
+              })()}
+
+              <View style={styles.modalSection}>
+                <Text style={[styles.modalSectionTitle, { color: theme.textSecondary }]}>📋 Tavsif</Text>
+                <Text style={[styles.modalSectionValue, { color: theme.text }]}>{selectedOrder?.description}</Text>
+              </View>
+
+              <View style={styles.modalSection}>
+                <Text style={[styles.modalSectionTitle, { color: theme.textSecondary }]}>👤 Buyurtmachi</Text>
+                <Text style={[styles.modalSectionValue, { color: theme.text }]}>{selectedOrder?.customer?.name || 'Noma\'lum'}</Text>
+                {selectedOrder?.customer?.email ? (
+                  <Text style={[styles.modalSectionSub, { color: theme.textSecondary }]}>{selectedOrder.customer.email}</Text>
+                ) : null}
+                {selectedOrder?.customer_phone ? (
+                  <Text style={[styles.modalSectionSub, { color: theme.primary }]}>📞 {selectedOrder.customer_phone}</Text>
+                ) : null}
+              </View>
+
+              <View style={styles.modalSection}>
+                <Text style={[styles.modalSectionTitle, { color: theme.textSecondary }]}>🔨 Ishchi</Text>
+                {selectedOrder?.worker ? (
+                  <>
+                    <Text style={[styles.modalSectionValue, { color: theme.text }]}>{selectedOrder.worker.full_name}</Text>
+                    <Text style={[styles.modalSectionSub, { color: theme.primary }]}>📞 {selectedOrder.worker.phone}</Text>
+                  </>
+                ) : (
+                  <Text style={[styles.modalSectionValue, { color: theme.textTertiary }]}>Tayinlanmagan</Text>
+                )}
+              </View>
+
+              <View style={styles.modalSection}>
+                <Text style={[styles.modalSectionTitle, { color: theme.textSecondary }]}>📍 Manzil</Text>
+                <Text style={[styles.modalSectionValue, { color: theme.text }]}>
+                  {selectedOrder?.location && !/^-?\d+\./.test(selectedOrder.location)
+                    ? selectedOrder.location
+                    : selectedOrder?.latitude
+                    ? `${selectedOrder.latitude.toFixed(6)}, ${selectedOrder.longitude?.toFixed(6)}`
+                    : 'Ko\'rsatilmagan'}
+                </Text>
+              </View>
+
+              <View style={styles.modalSection}>
+                <Text style={[styles.modalSectionTitle, { color: theme.textSecondary }]}>🕐 Vaqt</Text>
+                <Text style={[styles.modalSectionSub, { color: theme.textSecondary }]}>
+                  Yaratildi: {selectedOrder ? new Date(selectedOrder.created_at).toLocaleString('uz-UZ') : ''}
+                </Text>
+                <Text style={[styles.modalSectionSub, { color: theme.textSecondary }]}>
+                  Yangilandi: {selectedOrder ? new Date(selectedOrder.updated_at).toLocaleString('uz-UZ') : ''}
+                </Text>
+              </View>
+            </ScrollView>
+
+            <Button title="Yopish" onPress={() => setShowOrderModal(false)} style={{ marginTop: spacing.md }} />
+          </View>
+        </View>
+      </Modal>
+
       <AlertComponent />
     </View>
   );
@@ -1036,6 +1350,58 @@ const styles = StyleSheet.create({
   loadingText: {
     ...typography.body,
     marginTop: spacing.md,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  orderInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs / 2,
+  },
+  orderInfoText: {
+    ...typography.small,
+    fontWeight: '500',
+  },
+  orderInfoSub: {
+    ...typography.small,
+    flex: 1,
+  },
+  orderModalContent: {
+    width: '92%',
+    maxWidth: 480,
+    maxHeight: '85%',
+    padding: spacing.xl,
+    borderRadius: borderRadius.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  modalSection: {
+    marginBottom: spacing.md,
+  },
+  modalSectionTitle: {
+    ...typography.small,
+    fontWeight: '600',
+    marginBottom: spacing.xs / 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  modalSectionValue: {
+    ...typography.bodyMedium,
+    fontWeight: '500',
+  },
+  modalSectionSub: {
+    ...typography.small,
+    marginTop: spacing.xs / 2,
   },
   modalOverlay: {
     flex: 1,
