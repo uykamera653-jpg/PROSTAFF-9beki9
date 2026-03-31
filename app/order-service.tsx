@@ -98,6 +98,30 @@ export default function OrderServiceScreen() {
 
     setIsSubmitting(true);
     try {
+      // Check if company is still online before submitting
+      const { data: companyCheck, error: checkError } = await supabase
+        .from('companies')
+        .select('is_online, is_blocked')
+        .eq('id', companyId)
+        .single();
+
+      if (checkError || !companyCheck) {
+        showNativeAlert('Xatolik', 'Firma topilmadi');
+        setIsSubmitting(false);
+        return;
+      }
+      if (!companyCheck.is_online) {
+        showNativeAlert('Firma offline', 'Bu firma hozir offline rejimida. Iltimos, boshqa firmani tanlang yoki keyinroq urinib ko\'ring.');
+        setIsSubmitting(false);
+        setShowSummary(false);
+        return;
+      }
+      if (companyCheck.is_blocked) {
+        showNativeAlert('Xatolik', 'Bu firma bloklangan');
+        setIsSubmitting(false);
+        setShowSummary(false);
+        return;
+      }
       // Upload image if selected
       let imageUrl: string | null = null;
       if (photoUri) {

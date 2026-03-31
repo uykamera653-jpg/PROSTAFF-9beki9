@@ -407,6 +407,11 @@ export default function CompanyDashboardScreen() {
       if (error) {
         setIsOnline(!value);
         showAlert('Xatolik', "Holatni o'zgartirib bo'lmadi");
+      } else {
+        setProfile((prev) => prev ? { ...prev, is_online: value } : prev);
+        if (!value) {
+          showAlert('Offline rejim', "Siz offline rejimga o'tdingiz. Mijozlarga ko'rinmaysiz va yangi buyurtmalar kelmaydi.");
+        }
       }
     } catch {
       setIsOnline(!value);
