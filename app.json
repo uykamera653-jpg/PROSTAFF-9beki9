@@ -52,12 +52,6 @@
           "locationAlwaysAndWhenInUsePermission": "Bu ilova lokatsiyangizni xaritada ko'rsatish uchun foydalanadi."
         }
       ],
-      [
-        "react-native-maps",
-        {
-          "googleMapsApiKey": ""
-        }
-      ]
     ],
     "experiments": {
       "typedRoutes": true
