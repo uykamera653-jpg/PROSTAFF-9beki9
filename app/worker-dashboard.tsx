@@ -228,7 +228,7 @@ export default function WorkerDashboardScreen() {
         .in('category_id', categoryIds);
 
       if (selectedTab === 'pending') {
-        query = query.eq('status', 'pending');
+        query = query.eq('status', 'pending').eq('order_type', 'worker');
       } else {
         query = query.eq('worker_id', user.id).eq('status', selectedTab);
       }

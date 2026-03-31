@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Audio } from 'expo-av';
 import {
   View,
   Text,
@@ -89,6 +90,8 @@ export default function CompanyDashboardScreen() {
   const [locationCoords, setLocationCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const prevOrderCountRef = useRef<number>(0);
+  const soundRef = useRef<Audio.Sound | null>(null);
 
   // Check role and redirect if not company
   useEffect(() => {
@@ -114,6 +117,10 @@ export default function CompanyDashboardScreen() {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
+      }
+      if (soundRef.current) {
+        soundRef.current.unloadAsync();
+        soundRef.current = null;
       }
     };
   }, [profile, ordersTab]);
@@ -164,8 +171,11 @@ export default function CompanyDashboardScreen() {
         .limit(100);
 
       if (ordersTab === 'pending') {
-        // All available pending orders (not yet accepted by anyone)
-        query = query.eq('status', 'pending');
+        // Only orders specifically targeted at this company
+        query = query
+          .eq('status', 'pending')
+          .eq('order_type', 'company')
+          .eq('target_company_id', user!.id);
       } else if (ordersTab === 'accepted') {
         // Orders accepted by this company
         query = query.eq('worker_id', user!.id).in('status', ['accepted', 'in_progress']);
@@ -206,13 +216,43 @@ export default function CompanyDashboardScreen() {
     }
   };
 
+  const playNotificationSound = async () => {
+    try {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+      }
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: 'https://cdn.freesound.org/previews/521/521975_1648170-lq.mp3' },
+        { shouldPlay: true, volume: 1.0 }
+      );
+      soundRef.current = sound;
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync();
+          soundRef.current = null;
+        }
+      });
+    } catch (e) {
+      console.log('Sound play failed:', e);
+    }
+  };
+
   const setupRealtime = () => {
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
     }
     channelRef.current = supabase
-      .channel('company-dashboard-orders')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+      .channel('company-dashboard-orders-' + user?.id)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders',
+        filter: `target_company_id=eq.${user?.id}` }, async (payload) => {
+        // Play sound for new incoming orders targeted at this company
+        if (payload.new?.status === 'pending') {
+          await playNotificationSound();
+        }
+        loadOrders();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, () => {
         loadOrders();
       })
       .subscribe();
