@@ -7,7 +7,11 @@ import {
   TouchableOpacity,
   Linking,
   ActivityIndicator,
+  Platform,
+  Modal,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,6 +38,7 @@ interface WorkerProfile {
   min_price: number;
   max_price: number;
   is_online: boolean;
+  avatar_url?: string;
 }
 
 interface Category {
@@ -55,6 +60,8 @@ export default function WorkerProfileScreen() {
   const [workerProfile, setWorkerProfile] = useState<WorkerProfile | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [showImagePickerModal, setShowImagePickerModal] = useState(false);
   const { showAlert, AlertComponent } = useAlert();
 
   useEffect(() => {
@@ -121,6 +128,80 @@ export default function WorkerProfileScreen() {
     router.push('/worker-onboarding');
   };
 
+  const handleAvatarUpload = async (source: 'gallery' | 'camera') => {
+    setShowImagePickerModal(false);
+    try {
+      let result: ImagePicker.ImagePickerResult;
+
+      if (source === 'camera') {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          showAlert('Ruxsat kerak', 'Kamera uchun ruxsat bering');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        });
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          showAlert('Ruxsat kerak', 'Galereya uchun ruxsat bering');
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        });
+      }
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      setAvatarUploading(true);
+
+      // Convert image to base64 for upload
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+
+      const ext = asset.uri.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${user!.id}/avatar_${Date.now()}.${ext}`;
+      const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+      const { error: uploadError } = await supabase.storage
+        .from('profile-images')
+        .upload(fileName, arrayBuffer, { contentType, upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from('profile-images')
+        .getPublicUrl(fileName);
+
+      const avatarUrl = urlData.publicUrl;
+
+      const { error: updateError } = await supabase
+        .from('workers')
+        .update({ avatar_url: avatarUrl })
+        .eq('id', user!.id);
+
+      if (updateError) throw updateError;
+
+      setWorkerProfile((prev) => prev ? { ...prev, avatar_url: avatarUrl } : prev);
+      showAlert('Muvaffaqiyatli', 'Profil rasmi yangilandi!');
+    } catch (error: any) {
+      console.error('Avatar upload error:', error);
+      showAlert('Xatolik', error.message || 'Rasm yuklashda xatolik');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   const handleSignOut = () => {
     showAlert(
       'Chiqish',
@@ -162,11 +243,31 @@ export default function WorkerProfileScreen() {
       >
         {/* Worker Info Card */}
         <Card style={styles.infoCard}>
-          <View style={styles.avatarContainer}>
-            <View style={[styles.avatar, { backgroundColor: theme.primary + '20' }]}>
-              <Ionicons name="person" size={40} color={theme.primary} />
+          <TouchableOpacity
+            style={styles.avatarContainer}
+            onPress={() => setShowImagePickerModal(true)}
+            activeOpacity={0.8}
+          >
+            {workerProfile?.avatar_url ? (
+              <Image
+                source={{ uri: workerProfile.avatar_url }}
+                style={[styles.avatar, { borderRadius: 40 }]}
+                contentFit="cover"
+                transition={200}
+              />
+            ) : (
+              <View style={[styles.avatar, { backgroundColor: theme.primary + '20' }]}>
+                <Ionicons name="person" size={40} color={theme.primary} />
+              </View>
+            )}
+            <View style={[styles.avatarEditBadge, { backgroundColor: theme.primary }]}>
+              {avatarUploading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="camera" size={14} color="#fff" />
+              )}
             </View>
-          </View>
+          </TouchableOpacity>
           
           <Text style={[styles.name, { color: theme.text }]}>
             {workerProfile?.full_name || 'Ishchi'}
@@ -482,6 +583,47 @@ export default function WorkerProfileScreen() {
 
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
+      {/* Image Picker Modal */}
+      <Modal
+        visible={showImagePickerModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowImagePickerModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.imagePickerOverlay}
+          activeOpacity={1}
+          onPress={() => setShowImagePickerModal(false)}
+        >
+          <View style={[styles.imagePickerSheet, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.imagePickerTitle, { color: theme.text }]}>Rasm tanlash</Text>
+            <TouchableOpacity
+              style={[styles.imagePickerOption, { borderBottomColor: theme.border }]}
+              onPress={() => handleAvatarUpload('camera')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="camera" size={24} color={theme.primary} />
+              <Text style={[styles.imagePickerOptionText, { color: theme.text }]}>Kamera</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.imagePickerOption, { borderBottomColor: 'transparent' }]}
+              onPress={() => handleAvatarUpload('gallery')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="images" size={24} color={theme.primary} />
+              <Text style={[styles.imagePickerOptionText, { color: theme.text }]}>Galereya</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.imagePickerCancel, { backgroundColor: theme.surfaceVariant }]}
+              onPress={() => setShowImagePickerModal(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={[{ color: theme.text, fontWeight: '600', fontSize: 16 }]}>Bekor qilish</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <AlertComponent />
     </View>
   );
@@ -524,6 +666,7 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     marginBottom: spacing.md,
+    position: 'relative',
   },
   avatar: {
     width: 80,
@@ -531,6 +674,53 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  imagePickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  imagePickerSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: spacing.xl,
+    paddingBottom: spacing.xxl,
+  },
+  imagePickerTitle: {
+    ...typography.h4,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  imagePickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+  },
+  imagePickerOptionText: {
+    ...typography.bodyMedium,
+    fontWeight: '500',
+    fontSize: 16,
+  },
+  imagePickerCancel: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
   },
   name: {
     ...typography.h3,

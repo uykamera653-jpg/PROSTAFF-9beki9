@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Audio } from 'expo-av';
+import * as ImagePicker from 'expo-image-picker';
 import {
   View,
   Text,
@@ -45,6 +46,7 @@ interface CompanyProfile {
   completed_orders: number;
   latitude?: number;
   longitude?: number;
+  avatar_url?: string;
 }
 
 interface CompanyOrder {
@@ -84,6 +86,8 @@ export default function CompanyDashboardScreen() {
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<CompanyOrder | null>(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [showImagePickerModal, setShowImagePickerModal] = useState(false);
 
   // Profile edit fields
   const [companyName, setCompanyName] = useState('');
@@ -420,6 +424,79 @@ export default function CompanyDashboardScreen() {
     ]);
   };
 
+  const handleAvatarUpload = async (source: 'gallery' | 'camera') => {
+    setShowImagePickerModal(false);
+    try {
+      let result: ImagePicker.ImagePickerResult;
+
+      if (source === 'camera') {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          showAlert('Ruxsat kerak', 'Kamera uchun ruxsat bering');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        });
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          showAlert('Ruxsat kerak', 'Galereya uchun ruxsat bering');
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        });
+      }
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      setAvatarUploading(true);
+
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+
+      const ext = asset.uri.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${user!.id}/avatar_${Date.now()}.${ext}`;
+      const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+      const { error: uploadError } = await supabase.storage
+        .from('profile-images')
+        .upload(fileName, arrayBuffer, { contentType, upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from('profile-images')
+        .getPublicUrl(fileName);
+
+      const avatarUrl = urlData.publicUrl;
+
+      const { error: updateError } = await supabase
+        .from('companies')
+        .update({ avatar_url: avatarUrl })
+        .eq('id', user!.id);
+
+      if (updateError) throw updateError;
+
+      setProfile((prev) => prev ? { ...prev, avatar_url: avatarUrl } : prev);
+      showAlert('Muvaffaqiyatli', 'Profil rasmi yangilandi!');
+    } catch (error: any) {
+      console.error('Avatar upload error:', error);
+      showAlert('Xatolik', error.message || 'Rasm yuklashda xatolik');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending': return '#F59E0B';
@@ -643,15 +720,37 @@ export default function CompanyDashboardScreen() {
       {/* PROFILE TAB */}
       {activeTab === 'profile' && (
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-          {profile?.images && profile.images.length > 0 && (
-            <View style={styles.imagesContainer}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg }}>
-                {profile.images.map((img, i) => (
-                  <Image key={i} source={{ uri: img }} style={styles.profileImage} contentFit="cover" transition={200} />
-                ))}
-              </ScrollView>
-            </View>
-          )}
+          {/* Company Avatar */}
+          <View style={{ alignItems: 'center', paddingTop: spacing.xl, paddingBottom: spacing.md }}>
+            <TouchableOpacity
+              style={styles.avatarWrapper}
+              onPress={() => setShowImagePickerModal(true)}
+              activeOpacity={0.8}
+            >
+              {profile?.avatar_url ? (
+                <Image
+                  source={{ uri: profile.avatar_url }}
+                  style={styles.companyAvatar}
+                  contentFit="cover"
+                  transition={200}
+                />
+              ) : (
+                <View style={[styles.companyAvatar, { backgroundColor: theme.primary + '20', alignItems: 'center', justifyContent: 'center' }]}>
+                  <Ionicons name="business" size={44} color={theme.primary} />
+                </View>
+              )}
+              <View style={[styles.avatarEditBadge, { backgroundColor: theme.primary }]}>
+                {avatarUploading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="camera" size={14} color="#fff" />
+                )}
+              </View>
+            </TouchableOpacity>
+            <Text style={[{ color: theme.text, fontWeight: '700', fontSize: 18, marginTop: spacing.sm }]}>
+              {profile?.company_name || 'Firma'}
+            </Text>
+          </View>
 
           <View style={{ padding: spacing.lg, gap: spacing.lg }}>
             {/* Online/Offline toggle */}
@@ -1012,6 +1111,47 @@ export default function CompanyDashboardScreen() {
         </View>
       </Modal>
 
+      {/* Image Picker Modal */}
+      <Modal
+        visible={showImagePickerModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowImagePickerModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.imagePickerOverlay}
+          activeOpacity={1}
+          onPress={() => setShowImagePickerModal(false)}
+        >
+          <View style={[styles.imagePickerSheet, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.imagePickerTitle, { color: theme.text }]}>Rasm tanlash</Text>
+            <TouchableOpacity
+              style={[styles.imagePickerOption, { borderBottomColor: theme.border }]}
+              onPress={() => handleAvatarUpload('camera')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="camera" size={24} color={theme.primary} />
+              <Text style={[styles.imagePickerOptionText, { color: theme.text }]}>Kamera</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.imagePickerOption, { borderBottomColor: 'transparent' }]}
+              onPress={() => handleAvatarUpload('gallery')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="images" size={24} color={theme.primary} />
+              <Text style={[styles.imagePickerOptionText, { color: theme.text }]}>Galereya</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.imagePickerCancel, { backgroundColor: theme.surfaceVariant }]}
+              onPress={() => setShowImagePickerModal(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={{ color: theme.text, fontWeight: '600', fontSize: 16 }}>Bekor qilish</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Location Picker */}
       <LocationPicker
         visible={showLocationPicker}
@@ -1098,6 +1238,62 @@ const styles = StyleSheet.create({
   emptyText: { ...typography.body },
   imagesContainer: { paddingVertical: spacing.md },
   profileImage: { width: 120, height: 120, borderRadius: borderRadius.md },
+  avatarWrapper: {
+    position: 'relative',
+    marginBottom: spacing.sm,
+  },
+  companyAvatar: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  imagePickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  imagePickerSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: spacing.xl,
+    paddingBottom: spacing.xxl,
+  },
+  imagePickerTitle: {
+    ...typography.h4,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  imagePickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+  },
+  imagePickerOptionText: {
+    ...typography.bodyMedium,
+    fontWeight: '500',
+    fontSize: 16,
+  },
+  imagePickerCancel: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+  },
   toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   onlineIconBox: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   toggleTitle: { ...typography.bodyMedium, fontWeight: '600' },
