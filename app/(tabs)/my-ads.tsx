@@ -61,9 +61,10 @@ export default function MyAdsScreen() {
   useEffect(() => {
     if (user) {
       loadOrders();
-      setupRealtimeSubscription();
+      const cleanup = setupRealtimeSubscription();
+      return cleanup;
     }
-  }, [user, activeTab]);
+  }, [user?.id, activeTab]);
 
   // Timer for pending orders
   useEffect(() => {
@@ -125,11 +126,12 @@ export default function MyAdsScreen() {
   };
 
   const setupRealtimeSubscription = () => {
-    if (!user?.id) return;
+    if (!user?.id) return () => {};
 
-    console.log('📡 Setting up real-time subscription for customer orders');
+    const channelName = `customer-orders-${user.id}-${Date.now()}`;
+    console.log('📡 Setting up real-time subscription:', channelName);
     const channel = supabase
-      .channel('customer-orders-' + user.id)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -143,9 +145,7 @@ export default function MyAdsScreen() {
           loadOrders();
         }
       )
-      .subscribe((status) => {
-        console.log('📡 Subscription status:', status);
-      });
+      .subscribe();
 
     return () => {
       console.log('🔌 Cleaning up subscription');
