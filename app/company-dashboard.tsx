@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNotificationSettings } from '../hooks/useNotificationSettings';
 import { Audio } from 'expo-av';
 import {
   View,
@@ -11,7 +12,9 @@ import {
   Switch,
   Linking,
   Modal,
+  Vibration,
 } from 'react-native';
+import { useNotificationSettings } from '../hooks/useNotificationSettings';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -70,6 +73,7 @@ export default function CompanyDashboardScreen() {
   const { user, signOut } = useAuth();
   const { role, isLoading: roleLoading } = useUserRole();
   const { showAlert, AlertComponent } = useAlert();
+  const { settings: notifSettings } = useNotificationSettings();
 
   const [activeTab, setActiveTab] = useState<TabType>('orders');
   const [ordersTab, setOrdersTab] = useState<OrderStatus>('pending');
@@ -92,6 +96,8 @@ export default function CompanyDashboardScreen() {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const prevOrderCountRef = useRef<number>(0);
   const soundRef = useRef<Audio.Sound | null>(null);
+
+  const { settings: notifSettings, updateSettings: updateNotifSettings } = useNotificationSettings();
 
   // Check role and redirect if not company
   useEffect(() => {
@@ -217,6 +223,7 @@ export default function CompanyDashboardScreen() {
   };
 
   const playNotificationSound = async () => {
+    if (!notifSettings.enabled || !notifSettings.sound || !notifSettings.new_orders) return;
     try {
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
       if (soundRef.current) {
@@ -224,7 +231,7 @@ export default function CompanyDashboardScreen() {
       }
       const { sound } = await Audio.Sound.createAsync(
         { uri: 'https://cdn.freesound.org/previews/521/521975_1648170-lq.mp3' },
-        { shouldPlay: true, volume: 1.0 }
+        { shouldPlay: true, volume: notifSettings.volume ?? 1.0 }
       );
       soundRef.current = sound;
       sound.setOnPlaybackStatusUpdate((status) => {
@@ -246,8 +253,11 @@ export default function CompanyDashboardScreen() {
       .channel('company-dashboard-orders-' + user?.id)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders',
         filter: `target_company_id=eq.${user?.id}` }, async (payload) => {
-        // Play sound for new incoming orders targeted at this company
+        // Play sound and vibrate for new incoming orders targeted at this company
         if (payload.new?.status === 'pending') {
+          if (notifSettings.enabled && notifSettings.vibration && notifSettings.new_orders) {
+            Vibration.vibrate([0, 400, 200, 400]);
+          }
           await playNotificationSound();
         }
         loadOrders();
@@ -756,6 +766,91 @@ export default function CompanyDashboardScreen() {
                 disabled={isSaving}
                 loading={isSaving}
               />
+            </Card>
+
+            {/* Bildirishnoma sozlamalari */}
+            <Card>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Bildirishnoma sozlamalari</Text>
+
+              <View style={[styles.toggleRow, { marginBottom: spacing.md }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 }}>
+                  <View style={[styles.onlineIconBox, { backgroundColor: notifSettings.enabled ? theme.primary + '20' : theme.surfaceVariant }]}>
+                    <Ionicons name="notifications" size={22} color={notifSettings.enabled ? theme.primary : theme.textSecondary} />
+                  </View>
+                  <View>
+                    <Text style={[styles.toggleTitle, { color: theme.text }]}>Bildirishnomalar</Text>
+                    <Text style={[styles.toggleSub, { color: theme.textSecondary }]}>Barcha bildirishnomalar</Text>
+                  </View>
+                </View>
+                <Switch
+                  value={notifSettings.enabled}
+                  onValueChange={(v) => updateNotifSettings({ enabled: v })}
+                  trackColor={{ false: theme.border, true: theme.primary + '60' }}
+                  thumbColor={notifSettings.enabled ? theme.primary : theme.textTertiary}
+                />
+              </View>
+
+              <View style={[styles.toggleRow, { marginBottom: spacing.sm }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 }}>
+                  <View style={[styles.onlineIconBox, { backgroundColor: '#F59E0B20' }]}>
+                    <Ionicons name="volume-high" size={22} color={notifSettings.sound ? '#F59E0B' : theme.textSecondary} />
+                  </View>
+                  <View>
+                    <Text style={[styles.toggleTitle, { color: theme.text }]}>Ovoz</Text>
+                    <Text style={[styles.toggleSub, { color: theme.textSecondary }]}>Yangi buyurtma ovozi</Text>
+                  </View>
+                </View>
+                <Switch
+                  value={notifSettings.sound}
+                  onValueChange={(v) => updateNotifSettings({ sound: v })}
+                  trackColor={{ false: theme.border, true: '#F59E0B60' }}
+                  thumbColor={notifSettings.sound ? '#F59E0B' : theme.textTertiary}
+                  disabled={!notifSettings.enabled}
+                />
+              </View>
+
+              {notifSettings.sound && notifSettings.enabled && (
+                <View style={{ marginBottom: spacing.md, paddingHorizontal: spacing.sm }}>
+                  <Text style={[styles.toggleSub, { color: theme.textSecondary, marginBottom: spacing.xs }]}>Ovoz balandligi</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                    <Ionicons name="volume-low" size={16} color={theme.textSecondary} />
+                    <View style={{ flex: 1, flexDirection: 'row', backgroundColor: theme.surfaceVariant, borderRadius: borderRadius.md, overflow: 'hidden', height: 34 }}>
+                      {[0.25, 0.5, 0.75, 1.0].map((vol) => (
+                        <TouchableOpacity
+                          key={vol}
+                          style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: (notifSettings.volume ?? 1.0) >= vol ? '#F59E0B' : 'transparent' }}
+                          onPress={() => updateNotifSettings({ volume: vol })}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={{ color: (notifSettings.volume ?? 1.0) >= vol ? '#fff' : theme.textSecondary, fontSize: 11, fontWeight: '700' }}>
+                            {vol === 1.0 ? '100' : `${vol * 100}`}%
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <Ionicons name="volume-high" size={16} color={theme.textSecondary} />
+                  </View>
+                </View>
+              )}
+
+              <View style={styles.toggleRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 }}>
+                  <View style={[styles.onlineIconBox, { backgroundColor: '#8B5CF620' }]}>
+                    <Ionicons name="phone-portrait" size={22} color={notifSettings.vibration ? '#8B5CF6' : theme.textSecondary} />
+                  </View>
+                  <View>
+                    <Text style={[styles.toggleTitle, { color: theme.text }]}>Vibratsiya</Text>
+                    <Text style={[styles.toggleSub, { color: theme.textSecondary }]}>Buyurtma kelganda tebranish</Text>
+                  </View>
+                </View>
+                <Switch
+                  value={notifSettings.vibration}
+                  onValueChange={(v) => updateNotifSettings({ vibration: v })}
+                  trackColor={{ false: theme.border, true: '#8B5CF660' }}
+                  thumbColor={notifSettings.vibration ? '#8B5CF6' : theme.textTertiary}
+                  disabled={!notifSettings.enabled}
+                />
+              </View>
             </Card>
 
             {/* Sozlamalar */}

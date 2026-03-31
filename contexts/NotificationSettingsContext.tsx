@@ -9,6 +9,7 @@ export interface NotificationSettings {
   messages: boolean;
   sound: boolean;
   vibration: boolean;
+  volume: number; // 0.0 - 1.0
 }
 
 const defaultSettings: NotificationSettings = {
@@ -18,6 +19,7 @@ const defaultSettings: NotificationSettings = {
   messages: true,
   sound: true,
   vibration: true,
+  volume: 1.0,
 };
 
 interface NotificationSettingsContextType {

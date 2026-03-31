@@ -14,6 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { useTranslation } from '../hooks/useTranslation';
 import { useSettings } from '../hooks/useSettings';
+import { useNotificationSettings } from '../hooks/useNotificationSettings';
+import { Switch } from 'react-native';
 import { useAuth } from '../hooks/useAuth';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -47,6 +49,7 @@ export default function WorkerProfileScreen() {
   const { theme } = useTheme();
   const { t, language } = useTranslation();
   const { darkMode, setDarkMode, setLanguage } = useSettings();
+  const { settings: notifSettings, updateSettings: updateNotifSettings, loading: notifLoading } = useNotificationSettings();
   const { user, signOut } = useAuth();
 
   const [workerProfile, setWorkerProfile] = useState<WorkerProfile | null>(null);
@@ -272,6 +275,136 @@ export default function WorkerProfileScreen() {
                 {workerProfile?.max_price.toLocaleString()} so'm
               </Text>
             </View>
+          </View>
+        </Card>
+
+        {/* Notification Settings Card */}
+        <Card style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Bildirishnoma sozlamalari</Text>
+
+          {/* Master toggle */}
+          <View style={[styles.notifRow, { borderBottomColor: theme.border }]}>
+            <View style={styles.notifLeft}>
+              <View style={[styles.notifIcon, { backgroundColor: theme.primary + '20' }]}>
+                <Ionicons name="notifications" size={20} color={theme.primary} />
+              </View>
+              <View>
+                <Text style={[styles.notifTitle, { color: theme.text }]}>Bildirishnomalar</Text>
+                <Text style={[styles.notifSub, { color: theme.textSecondary }]}>Barcha bildirishnomalar</Text>
+              </View>
+            </View>
+            <Switch
+              value={notifSettings.enabled}
+              onValueChange={(v) => updateNotifSettings({ enabled: v })}
+              trackColor={{ false: theme.border, true: theme.primary + '60' }}
+              thumbColor={notifSettings.enabled ? theme.primary : theme.textTertiary}
+              disabled={notifLoading}
+            />
+          </View>
+
+          {/* Sound */}
+          <View style={[styles.notifRow, { borderBottomColor: theme.border }]}>
+            <View style={styles.notifLeft}>
+              <View style={[styles.notifIcon, { backgroundColor: '#F59E0B20' }]}>
+                <Ionicons name="volume-high" size={20} color="#F59E0B" />
+              </View>
+              <View>
+                <Text style={[styles.notifTitle, { color: theme.text }]}>Ovoz</Text>
+                <Text style={[styles.notifSub, { color: theme.textSecondary }]}>Yangi buyurtma ovozi</Text>
+              </View>
+            </View>
+            <Switch
+              value={notifSettings.sound}
+              onValueChange={(v) => updateNotifSettings({ sound: v })}
+              trackColor={{ false: theme.border, true: '#F59E0B60' }}
+              thumbColor={notifSettings.sound ? '#F59E0B' : theme.textTertiary}
+              disabled={notifLoading || !notifSettings.enabled}
+            />
+          </View>
+
+          {/* Volume slider */}
+          {notifSettings.sound && notifSettings.enabled && (
+            <View style={[styles.volumeRow, { borderBottomColor: theme.border }]}>
+              <Ionicons name="volume-low" size={18} color={theme.textSecondary} />
+              <View style={[styles.volumeTrack, { backgroundColor: theme.surfaceVariant }]}>
+                {[0.25, 0.5, 0.75, 1.0].map((vol) => (
+                  <TouchableOpacity
+                    key={vol}
+                    style={[
+                      styles.volumeSegment,
+                      { backgroundColor: notifSettings.volume >= vol ? theme.primary : 'transparent' },
+                    ]}
+                    onPress={() => updateNotifSettings({ volume: vol })}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={{ color: notifSettings.volume >= vol ? '#fff' : theme.textSecondary, fontSize: 11, fontWeight: '600' }}>
+                      {vol === 1.0 ? '100%' : `${vol * 100}%`}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Ionicons name="volume-high" size={18} color={theme.textSecondary} />
+            </View>
+          )}
+
+          {/* Vibration */}
+          <View style={[styles.notifRow, { borderBottomColor: theme.border }]}>
+            <View style={styles.notifLeft}>
+              <View style={[styles.notifIcon, { backgroundColor: '#8B5CF620' }]}>
+                <Ionicons name="phone-portrait" size={20} color="#8B5CF6" />
+              </View>
+              <View>
+                <Text style={[styles.notifTitle, { color: theme.text }]}>Vibratsiya</Text>
+                <Text style={[styles.notifSub, { color: theme.textSecondary }]}>Buyurtma kelganda tebranish</Text>
+              </View>
+            </View>
+            <Switch
+              value={notifSettings.vibration}
+              onValueChange={(v) => updateNotifSettings({ vibration: v })}
+              trackColor={{ false: theme.border, true: '#8B5CF660' }}
+              thumbColor={notifSettings.vibration ? '#8B5CF6' : theme.textTertiary}
+              disabled={notifLoading || !notifSettings.enabled}
+            />
+          </View>
+
+          {/* New orders */}
+          <View style={[styles.notifRow, { borderBottomColor: theme.border }]}>
+            <View style={styles.notifLeft}>
+              <View style={[styles.notifIcon, { backgroundColor: '#10B98120' }]}>
+                <Ionicons name="briefcase" size={20} color="#10B981" />
+              </View>
+              <View>
+                <Text style={[styles.notifTitle, { color: theme.text }]}>Yangi buyurtmalar</Text>
+                <Text style={[styles.notifSub, { color: theme.textSecondary }]}>Yangi buyurtma xabardorligi</Text>
+              </View>
+            </View>
+            <Switch
+              value={notifSettings.new_orders}
+              onValueChange={(v) => updateNotifSettings({ new_orders: v })}
+              trackColor={{ false: theme.border, true: '#10B98160' }}
+              thumbColor={notifSettings.new_orders ? '#10B981' : theme.textTertiary}
+              disabled={notifLoading || !notifSettings.enabled}
+            />
+          </View>
+
+          {/* Order updates */}
+          <View style={[styles.notifRow, { borderBottomColor: 'transparent' }]}>
+            <View style={styles.notifLeft}>
+              <View style={[styles.notifIcon, { backgroundColor: '#3B82F620' }]}>
+                <Ionicons name="refresh-circle" size={20} color="#3B82F6" />
+              </View>
+              <View>
+                <Text style={[styles.notifTitle, { color: theme.text }]}>Buyurtma yangilanishlari</Text>
+                <Text style={[styles.notifSub, { color: theme.textSecondary }]}>Status o'zgarganda xabar</Text>
+              </View>
+            </View>
+            <Switch
+              value={notifSettings.order_updates}
+              onValueChange={(v) => updateNotifSettings({ order_updates: v })}
+              trackColor={{ false: theme.border, true: '#3B82F660' }}
+              thumbColor={notifSettings.order_updates ? '#3B82F6' : theme.textTertiary}
+              disabled={notifLoading || !notifSettings.enabled}
+            />
           </View>
         </Card>
 
@@ -518,5 +651,52 @@ const styles = StyleSheet.create({
   },
   signOutButton: {
     marginTop: spacing.md,
+  },
+  notifRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+  },
+  notifLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    flex: 1,
+  },
+  notifIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifTitle: {
+    ...typography.bodyMedium,
+    fontWeight: '600',
+  },
+  notifSub: {
+    ...typography.small,
+    marginTop: 2,
+  },
+  volumeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+  },
+  volumeTrack: {
+    flex: 1,
+    flexDirection: 'row',
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+    height: 36,
+  },
+  volumeSegment: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

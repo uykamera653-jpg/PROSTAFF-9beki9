@@ -10,6 +10,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Vibration,
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
@@ -18,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../hooks/useAuth';
+import { useNotificationSettings } from '../hooks/useNotificationSettings';
 import { useUserRole } from '../hooks/useUserRole';
 import { useNotifications } from '../hooks/useNotifications';
 import { Card } from '../components/ui/Card';
@@ -80,6 +82,7 @@ export default function WorkerDashboardScreen() {
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   
   // Push notifications
+  const { settings: notifSettings } = useNotificationSettings();
   const { expoPushToken, isLoading: notifLoading, error: notifError } = useNotifications(user?.id || null);
 
   // Calculate distance between two coordinates (Haversine formula)
@@ -311,6 +314,10 @@ export default function WorkerDashboardScreen() {
         },
         (payload) => {
           console.log('📨 Real-time update:', payload);
+          // Vibrate on new order if enabled
+          if (payload.eventType === 'INSERT' && payload.new?.status === 'pending' && notifSettings.enabled && notifSettings.vibration && notifSettings.new_orders) {
+            Vibration.vibrate([0, 400, 200, 400]);
+          }
           loadOrders();
         }
       )
