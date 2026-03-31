@@ -16,6 +16,7 @@ interface AddOrderParams {
 
 interface CompaniesContextType {
   companies: Company[];
+  getCompanyById: (companyId: string) => Company | undefined;
   getCompanyOrders: (companyId: string) => any[];
   getUserOrders: (userId: string) => any[];
   addOrder: (params: AddOrderParams) => Promise<void>;
@@ -98,6 +99,10 @@ export function CompaniesProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const getCompanyById = (companyId: string): Company | undefined => {
+    return companies.find((c) => c.id === companyId);
+  };
+
   const getCompanyOrders = (companyId: string) => {
     return [];
   };
@@ -137,6 +142,7 @@ export function CompaniesProvider({ children }: { children: ReactNode }) {
     <CompaniesContext.Provider
       value={{
         companies,
+        getCompanyById,
         getCompanyOrders,
         getUserOrders,
         addOrder,
