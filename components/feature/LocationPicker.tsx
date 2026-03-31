@@ -221,7 +221,6 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
             position: relative;
             width: 40px;
             height: 50px;
-            transform: translate(-20px, -50px);
           ">
             <svg width="40" height="50" viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg">
               <!-- Shadow -->
