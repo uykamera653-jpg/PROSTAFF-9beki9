@@ -123,6 +123,35 @@ export default function MyAdsScreen() {
     return () => { supabase.removeChannel(channel); };
   };
 
+  const handleCancelOrder = (orderId: string) => {
+    const doCancel = async () => {
+      try {
+        const { error } = await supabase
+          .from('orders')
+          .update({ status: 'cancelled' })
+          .eq('id', orderId)
+          .eq('customer_id', user?.id);
+        if (error) throw error;
+        setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      } catch (err: any) {
+        Alert.alert('Xatolik', 'Buyurtmani bekor qilib bo\'lmadi');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('Bu buyurtmani bekor qilishni tasdiqlaysizmi?')) doCancel();
+    } else {
+      Alert.alert(
+        'Bekor qilish',
+        'Bu buyurtmani bekor qilishni tasdiqlaysizmi?',
+        [
+          { text: 'Yo\'q', style: 'cancel' },
+          { text: 'Ha, bekor qilish', style: 'destructive', onPress: doCancel },
+        ]
+      );
+    }
+  };
+
   const handleDeleteOrder = (orderId: string) => {
     const doDelete = async () => {
       try {
@@ -190,6 +219,19 @@ export default function MyAdsScreen() {
                   {getStatusText(item.status)}
                 </Text>
               </View>
+              {item.status === 'pending' && (
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    handleCancelOrder(item.id);
+                  }}
+                  style={[styles.cancelBtn, { backgroundColor: '#F59E0B15', borderColor: '#F59E0B' }]}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close-circle-outline" size={13} color="#F59E0B" />
+                  <Text style={[styles.cancelBtnText, { color: '#F59E0B' }]}>Bekor</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 onPress={(e) => {
                   e.stopPropagation?.();
@@ -394,6 +436,19 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  cancelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    height: 28,
+    borderRadius: 7,
+    borderWidth: 1,
+  },
+  cancelBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   description: {
     ...typography.body,
