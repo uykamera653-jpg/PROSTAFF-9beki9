@@ -6,11 +6,9 @@ import {
   FlatList,
   ScrollView,
   TouchableOpacity,
-  Modal,
   Alert,
   Platform,
   Linking,
-  ActionSheetIOS,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
@@ -21,7 +19,6 @@ import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
 import { useAuth } from '../../hooks/useAuth';
 import { Card } from '../../components/ui/Card';
-import { Button } from '../../components/ui/Button';
 import { spacing, typography, borderRadius } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 
@@ -44,6 +41,14 @@ interface CustomerOrder {
   worker_id?: string;
 }
 
+const TABS: { key: OrderStatus; label: string; color: string }[] = [
+  { key: 'pending', label: 'Kutilmoqda', color: '#F59E0B' },
+  { key: 'accepted', label: 'Qabul qilindi', color: '#3B82F6' },
+  { key: 'in_progress', label: 'Jarayonda', color: '#8B5CF6' },
+  { key: 'completed', label: 'Bajarilgan', color: '#10B981' },
+  { key: 'cancelled', label: 'Bekor qilindi', color: '#EF4444' },
+];
+
 export default function MyAdsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -51,13 +56,12 @@ export default function MyAdsScreen() {
   const { t } = useTranslation();
   const { user } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<OrderStatus | 'all'>('pending');
+  const [activeTab, setActiveTab] = useState<OrderStatus>('pending');
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [orderTimers, setOrderTimers] = useState<{ [orderId: string]: number }>({});
 
-  // Load orders on mount and when tab changes
   useEffect(() => {
     if (user) {
       loadOrders();
@@ -66,7 +70,6 @@ export default function MyAdsScreen() {
     }
   }, [user?.id, activeTab]);
 
-  // Timer for pending orders
   useEffect(() => {
     const interval = setInterval(() => {
       setOrderTimers((prev) => {
@@ -82,43 +85,23 @@ export default function MyAdsScreen() {
         return updated;
       });
     }, 1000);
-
     return () => clearInterval(interval);
   }, [orders]);
 
   const loadOrders = async () => {
     if (!user?.id) return;
-
     try {
       setRefreshing(true);
-      console.log('🔄 Loading customer orders...');
-
-      let query = supabase
+      const { data, error } = await supabase
         .from('orders')
         .select('*')
         .eq('customer_id', user.id)
+        .eq('status', activeTab)
         .order('created_at', { ascending: false });
-
-      if (activeTab !== 'all') {
-        query = query.eq('status', activeTab);
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('❌ Failed to load orders:', error);
-        throw error;
-      }
-
-      console.log('✅ Loaded orders:', data?.length || 0);
+      if (error) throw error;
       setOrders(data || []);
     } catch (error: any) {
-      console.error('❌ Error loading orders:', error);
-      if (Platform.OS === 'web') {
-        alert('Buyurtmalarni yuklab bo\'lmadi');
-      } else {
-        Alert.alert('Xatolik', 'Buyurtmalarni yuklab bo\'lmadi');
-      }
+      console.error('Error loading orders:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -127,74 +110,68 @@ export default function MyAdsScreen() {
 
   const setupRealtimeSubscription = () => {
     if (!user?.id) return () => {};
-
     const channelName = `customer-orders-${user.id}-${Date.now()}`;
-    console.log('📡 Setting up real-time subscription:', channelName);
     const channel = supabase
       .channel(channelName)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'orders',
-          filter: `customer_id=eq.${user.id}`,
-        },
-        (payload) => {
-          console.log('📨 Real-time order update:', payload);
-          loadOrders();
-        }
-      )
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'orders',
+        filter: `customer_id=eq.${user.id}`,
+      }, () => { loadOrders(); })
       .subscribe();
-
-    return () => {
-      console.log('🔌 Cleaning up subscription');
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   };
 
-  const handleCall = (phoneNumber: string) => {
-    Linking.openURL(`tel:${phoneNumber}`);
+  const handleDeleteOrder = (orderId: string) => {
+    const doDelete = async () => {
+      try {
+        const { error } = await supabase
+          .from('orders')
+          .delete()
+          .eq('id', orderId)
+          .eq('customer_id', user?.id);
+        if (error) throw error;
+        setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      } catch (err: any) {
+        Alert.alert('Xatolik', "Buyurtmani o'chirib bo'lmadi");
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm("Bu buyurtmani o'chirishni tasdiqlaysizmi?")) doDelete();
+    } else {
+      Alert.alert(
+        "O'chirish",
+        "Bu buyurtmani o'chirishni tasdiqlaysizmi?",
+        [
+          { text: 'Bekor qilish', style: 'cancel' },
+          { text: "O'chirish", style: 'destructive', onPress: doDelete },
+        ]
+      );
+    }
+  };
+
+  const getLocationText = (item: CustomerOrder) => {
+    if (item.location && !/^-?\d+\./.test(item.location)) return item.location;
+    if (item.latitude && item.longitude)
+      return `${item.latitude.toFixed(5)}, ${item.longitude.toFixed(5)}`;
+    return "Manzil ko'rsatilmagan";
   };
 
   const getStatusColor = (status: OrderStatus) => {
-    switch (status) {
-      case 'pending':
-        return theme.warning;
-      case 'accepted':
-        return theme.primary;
-      case 'in_progress':
-        return theme.info;
-      case 'completed':
-        return theme.success;
-      case 'cancelled':
-        return theme.error;
-      default:
-        return theme.textSecondary;
-    }
+    return TABS.find((t) => t.key === status)?.color || theme.textSecondary;
   };
 
   const getStatusText = (status: OrderStatus) => {
-    switch (status) {
-      case 'pending':
-        return 'Kutilmoqda';
-      case 'accepted':
-        return 'Qabul qilindi';
-      case 'in_progress':
-        return 'Jarayonda';
-      case 'completed':
-        return 'Bajarildi';
-      case 'cancelled':
-        return 'Bekor qilindi';
-      default:
-        return status;
-    }
+    return TABS.find((t) => t.key === status)?.label || status;
   };
 
   const renderOrderItem = ({ item }: { item: CustomerOrder }) => {
     const timeRemaining = orderTimers[item.id] || 0;
     const minutes = Math.floor(timeRemaining / 60);
     const seconds = timeRemaining % 60;
+    const statusColor = getStatusColor(item.status);
 
     return (
       <TouchableOpacity
@@ -202,49 +179,57 @@ export default function MyAdsScreen() {
         activeOpacity={0.7}
       >
         <Card style={styles.jobCard}>
+          {/* Header row */}
           <View style={styles.jobHeader}>
-            <Text style={[styles.category, { color: theme.primary }]}>
+            <Text style={[styles.category, { color: theme.primary }]} numberOfLines={1}>
               {item.title}
             </Text>
-            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
-              <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-                {getStatusText(item.status)}
-              </Text>
+            <View style={styles.headerRight}>
+              <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+                <Text style={[styles.statusText, { color: statusColor }]}>
+                  {getStatusText(item.status)}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  handleDeleteOrder(item.id);
+                }}
+                style={[styles.deleteBtn, { backgroundColor: theme.error + '15' }]}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="trash-outline" size={15} color={theme.error} />
+              </TouchableOpacity>
             </View>
           </View>
-          
+
           <Text style={[styles.description, { color: theme.text }]} numberOfLines={2}>
             {item.description}
           </Text>
 
-          {/* Timer for pending orders */}
           {item.status === 'pending' && timeRemaining > 0 && (
-            <View style={[styles.timerContainer, { backgroundColor: theme.warning + '10' }]}>
-              <Ionicons name="timer" size={18} color={theme.warning} />
+            <View style={[styles.timerContainer, { backgroundColor: theme.warning + '12' }]}>
+              <Ionicons name="timer" size={16} color={theme.warning} />
               <Text style={[styles.timerText, { color: theme.warning }]}>
                 Ishchi topish uchun: {minutes}:{seconds.toString().padStart(2, '0')}
               </Text>
             </View>
           )}
 
-          {item.status === 'pending' && timeRemaining === 0 && (
-            <View style={[styles.timerContainer, { backgroundColor: theme.error + '10' }]}>
-              <Ionicons name="alert-circle" size={18} color={theme.error} />
-              <Text style={[styles.timerText, { color: theme.error }]}>
-                Muddati tugadi
-              </Text>
+          {item.status === 'pending' && timeRemaining === 0 && item.expires_at && (
+            <View style={[styles.timerContainer, { backgroundColor: theme.error + '12' }]}>
+              <Ionicons name="alert-circle" size={16} color={theme.error} />
+              <Text style={[styles.timerText, { color: theme.error }]}>Muddati tugadi</Text>
             </View>
           )}
-          
-          <View style={styles.jobDetails}>
-            <View style={styles.detailRow}>
-              <Ionicons name="location" size={16} color={theme.textSecondary} />
-              <Text style={[styles.detailText, { color: theme.textSecondary }]} numberOfLines={1}>
-                {item.location}
-              </Text>
-            </View>
+
+          <View style={styles.detailRow}>
+            <Ionicons name="location-outline" size={14} color={theme.textSecondary} />
+            <Text style={[styles.detailText, { color: theme.textSecondary }]} numberOfLines={1}>
+              {getLocationText(item)}
+            </Text>
           </View>
-          
+
           <Text style={[styles.date, { color: theme.textTertiary }]}>
             {new Date(item.created_at).toLocaleDateString('uz-UZ')}
           </Text>
@@ -261,9 +246,7 @@ export default function MyAdsScreen() {
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.primary} />
-          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-            Yuklanmoqda...
-          </Text>
+          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Yuklanmoqda...</Text>
         </View>
       </View>
     );
@@ -271,115 +254,53 @@ export default function MyAdsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background, paddingTop: insets.top }]}>
+      {/* Header */}
       <View style={styles.header}>
         <Text style={[styles.title, { color: theme.text }]}>Buyurtmalarim</Text>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.tabsContainer}
-      >
-        <TouchableOpacity
-          style={[
-            styles.tabButton,
-            activeTab === 'pending' && { backgroundColor: theme.warning, borderColor: theme.warning },
-          ]}
-          onPress={() => setActiveTab('pending')}
-          activeOpacity={0.8}
+      {/* Tabs */}
+      <View style={styles.tabsWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabsContent}
         >
-          <Text
-            style={[
-              styles.tabButtonText,
-              { color: activeTab === 'pending' ? '#FFFFFF' : theme.warning },
-            ]}
-          >
-            Kutilmoqda
-          </Text>
-        </TouchableOpacity>
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[
+                  styles.tabChip,
+                  {
+                    backgroundColor: isActive ? tab.color : 'transparent',
+                    borderColor: tab.color,
+                  },
+                ]}
+                onPress={() => setActiveTab(tab.key)}
+                activeOpacity={0.75}
+              >
+                <Text
+                  style={[
+                    styles.tabChipText,
+                    { color: isActive ? '#FFFFFF' : tab.color },
+                  ]}
+                >
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
-        <TouchableOpacity
-          style={[
-            styles.tabButton,
-            activeTab === 'accepted' && { backgroundColor: theme.primary, borderColor: theme.primary },
-          ]}
-          onPress={() => setActiveTab('accepted')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.tabButtonText,
-              { color: activeTab === 'accepted' ? '#FFFFFF' : theme.primary },
-            ]}
-          >
-            Qabul qilindi
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.tabButton,
-            activeTab === 'in_progress' && { backgroundColor: theme.info, borderColor: theme.info },
-          ]}
-          onPress={() => setActiveTab('in_progress')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.tabButtonText,
-              { color: activeTab === 'in_progress' ? '#FFFFFF' : theme.info },
-            ]}
-          >
-            Jarayonda
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.tabButton,
-            activeTab === 'completed' && { backgroundColor: theme.success, borderColor: theme.success },
-          ]}
-          onPress={() => setActiveTab('completed')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.tabButtonText,
-              { color: activeTab === 'completed' ? '#FFFFFF' : theme.success },
-            ]}
-          >
-            Bajarilgan
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.tabButton,
-            activeTab === 'cancelled' && { backgroundColor: theme.error, borderColor: theme.error },
-          ]}
-          onPress={() => setActiveTab('cancelled')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.tabButtonText,
-              { color: activeTab === 'cancelled' ? '#FFFFFF' : theme.error },
-            ]}
-          >
-            Bekor qilindi
-          </Text>
-        </TouchableOpacity>
-      </ScrollView>
-
+      {/* Orders list */}
       {orders.length === 0 ? (
         <View style={styles.emptyState}>
-          <Ionicons name="document-text-outline" size={64} color={theme.textTertiary} />
+          <Ionicons name="document-text-outline" size={60} color={theme.textTertiary} />
           <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-            {activeTab === 'pending'
-              ? 'Kutilayotgan buyurtmalar yo\'q'
-              : activeTab === 'completed'
-              ? 'Bajarilgan buyurtmalar yo\'q'
-              : 'Buyurtmalar yo\'q'}
+            {TABS.find((t) => t.key === activeTab)?.label} buyurtmalar yo'q
           </Text>
         </View>
       ) : (
@@ -404,93 +325,96 @@ export default function MyAdsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
   },
-  title: {
-    ...typography.h2,
+  title: { ...typography.h2 },
+  tabsWrapper: {
+    height: 52,
+    marginBottom: spacing.xs,
+  },
+  tabsContent: {
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 8,
+  },
+  tabChip: {
+    paddingHorizontal: 14,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tabChipText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   list: {
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
     paddingBottom: spacing.xxl,
   },
-  jobCard: {
-    marginBottom: spacing.md,
-  },
+  jobCard: { marginBottom: spacing.md },
   jobHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flexShrink: 0,
   },
   category: {
-    ...typography.h3,
-    fontSize: 18,
+    ...typography.bodyMedium,
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
   },
   statusBadge: {
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingVertical: 3,
     borderRadius: 6,
   },
   statusText: {
-    ...typography.small,
+    fontSize: 12,
     fontWeight: '600',
+  },
+  deleteBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   description: {
     ...typography.body,
-    marginBottom: spacing.md,
-  },
-  jobDetails: {
-    gap: spacing.xs,
     marginBottom: spacing.sm,
   },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+    marginBottom: spacing.xs,
   },
-  detailText: {
-    ...typography.caption,
-  },
+  detailText: { ...typography.caption, flex: 1 },
   date: {
     ...typography.small,
     textAlign: 'right',
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-  },
-  emptyText: {
-    ...typography.body,
-  },
-  tabsContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-    gap: spacing.sm,
-  },
-  tabButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-    borderWidth: 1.5,
-    backgroundColor: 'transparent',
-    marginRight: spacing.xs,
-  },
-  tabButtonText: {
-    ...typography.bodyMedium,
-    fontSize: 14,
-    fontWeight: '600',
   },
   timerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    paddingVertical: spacing.xs,
+    paddingVertical: 5,
     paddingHorizontal: spacing.sm,
     borderRadius: borderRadius.sm,
     marginBottom: spacing.sm,
@@ -499,65 +423,18 @@ const styles = StyleSheet.create({
     ...typography.small,
     fontWeight: '600',
   },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  emptyText: { ...typography.body },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.md,
   },
-  loadingText: {
-    ...typography.body,
-  },
-  serviceTypeText: {
-    ...typography.body,
-    marginBottom: spacing.sm,
-  },
-  modalTitle: {
-    ...typography.h3,
-    flex: 1,
-    textAlign: 'center',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginTop: spacing.md,
-    flexWrap: 'wrap',
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    borderRadius: 6,
-  },
-  actionButtonText: {
-    ...typography.small,
-    fontWeight: '600',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    width: '90%',
-    maxWidth: 500,
-    padding: spacing.xl,
-    borderRadius: 16,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    marginVertical: spacing.xl,
-  },
-  starButton: {
-    padding: spacing.xs,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
+  loadingText: { ...typography.body },
 });
