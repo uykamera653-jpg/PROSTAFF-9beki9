@@ -8,8 +8,27 @@ import { Card } from '../ui/Card';
 import { spacing, typography, borderRadius } from '../../constants/theme';
 import { Worker } from '../../types';
 
+// Extended worker type supporting both local (Worker) and Supabase workers
+export interface WorkerCardData {
+  id: string;
+  name?: string;
+  full_name?: string;
+  age?: number;
+  category?: string;
+  dailyRate?: number;
+  min_price?: number;
+  max_price?: number;
+  phoneNumber?: string;
+  arrivalTime?: string;
+  rating: number;
+  photoUrl?: string;
+  avatar_url?: string;
+  experience?: string;
+  completed_orders?: number;
+}
+
 interface WorkerCardProps {
-  worker: Worker;
+  worker: WorkerCardData;
   isSelected: boolean;
   onSelect: () => void;
 }
@@ -18,15 +37,23 @@ export function WorkerCard({ worker, isSelected, onSelect }: WorkerCardProps) {
   const { theme } = useTheme();
   const { t } = useTranslation();
 
+  // Normalize fields from both Worker and Supabase worker formats
+  const displayName = worker.full_name || worker.name || 'Ishchi';
+  const avatarUri = worker.avatar_url || worker.photoUrl;
+  const hasAge = worker.age && worker.age > 0;
+  const hasPriceRange = worker.min_price && worker.max_price;
+  const hasDailyRate = worker.dailyRate && worker.dailyRate > 0;
+
   return (
     <Card style={[styles.card, isSelected && { borderColor: theme.primary, borderWidth: 2 }]}>
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
-          {worker.photoUrl ? (
+          {avatarUri ? (
             <Image
-              source={{ uri: worker.photoUrl }}
+              source={{ uri: avatarUri }}
               style={styles.avatar}
               contentFit="cover"
+              transition={200}
             />
           ) : (
             <View style={[styles.avatar, { backgroundColor: theme.primary + '20' }]}>
@@ -35,46 +62,71 @@ export function WorkerCard({ worker, isSelected, onSelect }: WorkerCardProps) {
           )}
           <View style={[styles.ratingBadge, { backgroundColor: theme.success }]}>
             <Ionicons name="star" size={12} color="#FFFFFF" />
-            <Text style={styles.ratingText}>{worker.rating}</Text>
+            <Text style={styles.ratingText}>{Number(worker.rating).toFixed(1)}</Text>
           </View>
         </View>
         <View style={styles.info}>
           <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
-            {worker.name}
+            {displayName}
           </Text>
-          <Text style={[styles.age, { color: theme.textSecondary }]}>
-            {worker.age} {t.years}
-          </Text>
-          <Text style={[styles.experience, { color: theme.textTertiary }]} numberOfLines={1}>
-            {worker.experience}
-          </Text>
+          {hasAge ? (
+            <Text style={[styles.age, { color: theme.textSecondary }]}>
+              {worker.age} {t.years || 'yosh'}
+            </Text>
+          ) : null}
+          {worker.experience ? (
+            <Text style={[styles.experience, { color: theme.textTertiary }]} numberOfLines={1}>
+              {worker.experience}
+            </Text>
+          ) : worker.completed_orders !== undefined ? (
+            <Text style={[styles.experience, { color: theme.textTertiary }]}>
+              {worker.completed_orders} ta buyurtma bajarilgan
+            </Text>
+          ) : null}
         </View>
       </View>
 
       <View style={styles.details}>
-        <View style={[styles.detailItem, { backgroundColor: theme.surfaceVariant }]}>
-          <Ionicons name="cash-outline" size={18} color={theme.primary} />
-          <View style={styles.detailTextContainer}>
-            <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>
-              {t.dailyRate}
-            </Text>
-            <Text style={[styles.detailValue, { color: theme.text }]}>
-              {worker.dailyRate.toLocaleString()} {t.som}
-            </Text>
+        {/* Price: show range if available, else single dailyRate */}
+        {hasPriceRange ? (
+          <View style={[styles.detailItem, { backgroundColor: theme.surfaceVariant }]}>
+            <Ionicons name="cash-outline" size={18} color={theme.primary} />
+            <View style={styles.detailTextContainer}>
+              <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>
+                Kunlik narx
+              </Text>
+              <Text style={[styles.detailValue, { color: theme.text }]}>
+                {(worker.min_price as number).toLocaleString()} – {(worker.max_price as number).toLocaleString()} so'm
+              </Text>
+            </View>
           </View>
-        </View>
+        ) : hasDailyRate ? (
+          <View style={[styles.detailItem, { backgroundColor: theme.surfaceVariant }]}>
+            <Ionicons name="cash-outline" size={18} color={theme.primary} />
+            <View style={styles.detailTextContainer}>
+              <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>
+                {t.dailyRate || 'Kunlik narx'}
+              </Text>
+              <Text style={[styles.detailValue, { color: theme.text }]}>
+                {(worker.dailyRate as number).toLocaleString()} {t.som || "so'm"}
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
-        <View style={[styles.detailItem, { backgroundColor: theme.surfaceVariant }]}>
-          <Ionicons name="time-outline" size={18} color={theme.secondary} />
-          <View style={styles.detailTextContainer}>
-            <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>
-              {t.arrivalTime}
-            </Text>
-            <Text style={[styles.detailValue, { color: theme.text }]}>
-              {worker.arrivalTime} {t.minutes}
-            </Text>
+        {worker.arrivalTime ? (
+          <View style={[styles.detailItem, { backgroundColor: theme.surfaceVariant }]}>
+            <Ionicons name="time-outline" size={18} color={theme.secondary} />
+            <View style={styles.detailTextContainer}>
+              <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>
+                {t.arrivalTime || 'Kelish vaqti'}
+              </Text>
+              <Text style={[styles.detailValue, { color: theme.text }]}>
+                {worker.arrivalTime} {t.minutes || 'daq'}
+              </Text>
+            </View>
           </View>
-        </View>
+        ) : null}
       </View>
 
       <TouchableOpacity
