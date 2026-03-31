@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   Linking,
   ActivityIndicator,
   RefreshControl,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,7 +20,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
 import { useAuth } from '../../hooks/useAuth';
+import { useReviews } from '../../hooks/useReviews';
 import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
 import { spacing, typography, borderRadius } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 
@@ -39,6 +43,8 @@ interface CustomerOrder {
   updated_at: string;
   expires_at?: string;
   worker_id?: string;
+  target_company_id?: string;
+  order_type?: string;
 }
 
 const TABS: { key: OrderStatus; label: string; color: string }[] = [
@@ -55,6 +61,7 @@ export default function MyAdsScreen() {
   const { theme } = useTheme();
   const { t } = useTranslation();
   const { user } = useAuth();
+  const { submitReview, checkReviewExists } = useReviews();
 
   const [activeTab, setActiveTab] = useState<OrderStatus>('pending');
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
@@ -65,6 +72,14 @@ export default function MyAdsScreen() {
   const [currentPage, setCurrentPage] = useState(0);
   const PAGE_SIZE = 20;
   const [orderTimers, setOrderTimers] = useState<{ [orderId: string]: number }>({});
+
+  // Review modal state
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewOrder, setReviewOrder] = useState<CustomerOrder | null>(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewedOrders, setReviewedOrders] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (user) {
@@ -91,6 +106,25 @@ export default function MyAdsScreen() {
     }, 1000);
     return () => clearInterval(interval);
   }, [orders]);
+
+  // Check which completed company orders already have reviews
+  useEffect(() => {
+    if (activeTab === 'completed' && orders.length > 0) {
+      checkReviewedOrders(orders);
+    }
+  }, [orders, activeTab]);
+
+  const checkReviewedOrders = async (orderList: CustomerOrder[]) => {
+    const companyOrders = orderList.filter((o) => o.order_type === 'company' && o.target_company_id);
+    const reviewed = new Set<string>();
+    await Promise.all(
+      companyOrders.map(async (o) => {
+        const exists = await checkReviewExists(o.id);
+        if (exists) reviewed.add(o.id);
+      })
+    );
+    setReviewedOrders(reviewed);
+  };
 
   const loadOrders = async () => {
     if (!user?.id) return;
@@ -166,7 +200,7 @@ export default function MyAdsScreen() {
         if (error) throw error;
         setOrders((prev) => prev.filter((o) => o.id !== orderId));
       } catch (err: any) {
-        Alert.alert('Xatolik', 'Buyurtmani bekor qilib bo\'lmadi');
+        Alert.alert('Xatolik', "Buyurtmani bekor qilib bo'lmadi");
       }
     };
 
@@ -177,7 +211,7 @@ export default function MyAdsScreen() {
         'Bekor qilish',
         'Bu buyurtmani bekor qilishni tasdiqlaysizmi?',
         [
-          { text: 'Yo\'q', style: 'cancel' },
+          { text: "Yo'q", style: 'cancel' },
           { text: 'Ha, bekor qilish', style: 'destructive', onPress: doCancel },
         ]
       );
@@ -213,6 +247,33 @@ export default function MyAdsScreen() {
     }
   };
 
+  const openReviewModal = (order: CustomerOrder) => {
+    setReviewOrder(order);
+    setReviewRating(5);
+    setReviewComment('');
+    setShowReviewModal(true);
+  };
+
+  const handleSubmitReview = async () => {
+    if (!reviewOrder?.target_company_id) return;
+    setReviewSubmitting(true);
+    try {
+      await submitReview(
+        reviewOrder.target_company_id,
+        reviewOrder.id,
+        reviewRating,
+        reviewComment
+      );
+      setReviewedOrders((prev) => new Set([...prev, reviewOrder.id]));
+      setShowReviewModal(false);
+      Alert.alert('Rahmat!', 'Reytingingiz qabul qilindi');
+    } catch (error: any) {
+      Alert.alert('Xatolik', error.message || 'Reyting yuborishda xatolik');
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
   const getLocationText = (item: CustomerOrder) => {
     if (item.location && !/^-?\d+\./.test(item.location)) return item.location;
     if (item.latitude && item.longitude)
@@ -221,11 +282,11 @@ export default function MyAdsScreen() {
   };
 
   const getStatusColor = (status: OrderStatus) => {
-    return TABS.find((t) => t.key === status)?.color || theme.textSecondary;
+    return TABS.find((tab) => tab.key === status)?.color || theme.textSecondary;
   };
 
   const getStatusText = (status: OrderStatus) => {
-    return TABS.find((t) => t.key === status)?.label || status;
+    return TABS.find((tab) => tab.key === status)?.label || status;
   };
 
   const renderOrderItem = ({ item }: { item: CustomerOrder }) => {
@@ -233,6 +294,8 @@ export default function MyAdsScreen() {
     const minutes = Math.floor(timeRemaining / 60);
     const seconds = timeRemaining % 60;
     const statusColor = getStatusColor(item.status);
+    const isCompanyOrder = item.order_type === 'company' && !!item.target_company_id;
+    const alreadyReviewed = reviewedOrders.has(item.id);
 
     return (
       <TouchableOpacity
@@ -307,6 +370,38 @@ export default function MyAdsScreen() {
           <Text style={[styles.date, { color: theme.textTertiary }]}>
             {new Date(item.created_at).toLocaleDateString('uz-UZ')}
           </Text>
+
+          {/* Rate button for completed company orders */}
+          {item.status === 'completed' && isCompanyOrder && (
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation?.();
+                if (!alreadyReviewed) openReviewModal(item);
+              }}
+              style={[
+                styles.rateBtn,
+                {
+                  backgroundColor: alreadyReviewed ? theme.surfaceVariant : '#F59E0B15',
+                  borderColor: alreadyReviewed ? theme.border : '#F59E0B',
+                },
+              ]}
+              activeOpacity={alreadyReviewed ? 1 : 0.8}
+            >
+              <Ionicons
+                name={alreadyReviewed ? 'checkmark-circle' : 'star'}
+                size={15}
+                color={alreadyReviewed ? theme.success : '#F59E0B'}
+              />
+              <Text
+                style={[
+                  styles.rateBtnText,
+                  { color: alreadyReviewed ? theme.textSecondary : '#F59E0B' },
+                ]}
+              >
+                {alreadyReviewed ? 'Baholandi' : 'Firma baholash'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </Card>
       </TouchableOpacity>
     );
@@ -355,12 +450,7 @@ export default function MyAdsScreen() {
                 onPress={() => setActiveTab(tab.key)}
                 activeOpacity={0.75}
               >
-                <Text
-                  style={[
-                    styles.tabChipText,
-                    { color: isActive ? '#FFFFFF' : tab.color },
-                  ]}
-                >
+                <Text style={[styles.tabChipText, { color: isActive ? '#FFFFFF' : tab.color }]}>
                   {tab.label}
                 </Text>
               </TouchableOpacity>
@@ -374,7 +464,7 @@ export default function MyAdsScreen() {
         <View style={styles.emptyState}>
           <Ionicons name="document-text-outline" size={60} color={theme.textTertiary} />
           <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-            {TABS.find((t) => t.key === activeTab)?.label} buyurtmalar yo'q
+            {TABS.find((tab) => tab.key === activeTab)?.label} buyurtmalar yo'q
           </Text>
         </View>
       ) : (
@@ -410,6 +500,92 @@ export default function MyAdsScreen() {
           }
         />
       )}
+
+      {/* Review Modal */}
+      <Modal
+        visible={showReviewModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowReviewModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setShowReviewModal(false)}
+          />
+          <View style={[styles.reviewModal, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.reviewTitle, { color: theme.text }]}>Firmani baholang</Text>
+            <Text style={[styles.reviewSubtitle, { color: theme.textSecondary }]} numberOfLines={1}>
+              {reviewOrder?.title}
+            </Text>
+
+            {/* Star rating */}
+            <View style={styles.starsRow}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity
+                  key={star}
+                  onPress={() => setReviewRating(star)}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons
+                    name={star <= reviewRating ? 'star' : 'star-outline'}
+                    size={36}
+                    color={star <= reviewRating ? '#F59E0B' : theme.border}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={[styles.ratingLabel, { color: theme.textSecondary }]}>
+              {reviewRating === 1
+                ? 'Juda yomon'
+                : reviewRating === 2
+                ? 'Yomon'
+                : reviewRating === 3
+                ? "Qoniqarli"
+                : reviewRating === 4
+                ? 'Yaxshi'
+                : "A'lo"}
+            </Text>
+
+            {/* Comment */}
+            <TextInput
+              value={reviewComment}
+              onChangeText={setReviewComment}
+              placeholder="Izoh qoldiring (ixtiyoriy)..."
+              placeholderTextColor={theme.textTertiary}
+              multiline
+              numberOfLines={3}
+              style={[
+                styles.commentInput,
+                {
+                  color: theme.text,
+                  backgroundColor: theme.surfaceVariant,
+                  borderColor: theme.border,
+                },
+              ]}
+            />
+
+            <View style={styles.reviewButtons}>
+              <Button
+                title="Bekor qilish"
+                onPress={() => setShowReviewModal(false)}
+                variant="outline"
+                style={{ flex: 1 }}
+              />
+              <Button
+                title={reviewSubmitting ? 'Yuborilmoqda...' : 'Yuborish'}
+                onPress={handleSubmitReview}
+                disabled={reviewSubmitting}
+                loading={reviewSubmitting}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -526,6 +702,20 @@ const styles = StyleSheet.create({
     ...typography.small,
     fontWeight: '600',
   },
+  rateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: 8,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+    marginTop: spacing.sm,
+  },
+  rateBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
   emptyState: {
     flex: 1,
     alignItems: 'center',
@@ -553,4 +743,58 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   loadingText: { ...typography.body },
+  // Review Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reviewModal: {
+    width: '88%',
+    maxWidth: 400,
+    padding: spacing.xl,
+    borderRadius: borderRadius.lg,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+  },
+  reviewTitle: {
+    ...typography.h3,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  reviewSubtitle: {
+    ...typography.small,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  ratingLabel: {
+    ...typography.bodyMedium,
+    textAlign: 'center',
+    fontWeight: '600',
+    marginBottom: spacing.lg,
+  },
+  commentInput: {
+    minHeight: 80,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    ...typography.body,
+    textAlignVertical: 'top',
+    marginBottom: spacing.lg,
+  },
+  reviewButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
 });

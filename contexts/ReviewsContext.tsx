@@ -1,71 +1,78 @@
-import React, { createContext, useState, ReactNode, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Review } from '../types';
+import React, { createContext, useState, ReactNode, useCallback } from 'react';
+import { supabase } from '../lib/supabase';
+
+export interface CompanyReview {
+  id: string;
+  company_id: string;
+  customer_id: string;
+  order_id: string;
+  rating: number;
+  comment?: string;
+  created_at: string;
+}
 
 interface ReviewsContextType {
-  reviews: Review[];
-  addReview: (review: Omit<Review, 'id' | 'createdAt'>) => Promise<void>;
-  getCompanyReviews: (companyId: string) => Review[];
-  getAverageRating: (companyId: string) => number;
+  submitReview: (
+    companyId: string,
+    orderId: string,
+    rating: number,
+    comment: string
+  ) => Promise<void>;
+  getCompanyReviews: (companyId: string) => Promise<CompanyReview[]>;
+  checkReviewExists: (orderId: string) => Promise<boolean>;
 }
 
 export const ReviewsContext = createContext<ReviewsContextType | undefined>(undefined);
 
 export function ReviewsProvider({ children }: { children: ReactNode }) {
-  const [reviews, setReviews] = useState<Review[]>([]);
+  const submitReview = useCallback(
+    async (companyId: string, orderId: string, rating: number, comment: string) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Foydalanuvchi topilmadi');
 
-  useEffect(() => {
-    loadReviews();
+      const { error } = await supabase.from('company_reviews').upsert(
+        {
+          company_id: companyId,
+          customer_id: user.id,
+          order_id: orderId,
+          rating,
+          comment: comment.trim() || null,
+        },
+        { onConflict: 'order_id,customer_id' }
+      );
+
+      if (error) throw error;
+    },
+    []
+  );
+
+  const getCompanyReviews = useCallback(async (companyId: string): Promise<CompanyReview[]> => {
+    const { data, error } = await supabase
+      .from('company_reviews')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
   }, []);
 
-  const loadReviews = async () => {
-    try {
-      const reviewsJson = await AsyncStorage.getItem('reviews');
-      if (reviewsJson) {
-        setReviews(JSON.parse(reviewsJson));
-      }
-    } catch (error) {
-      console.error('Failed to load reviews:', error);
-    }
-  };
+  const checkReviewExists = useCallback(async (orderId: string): Promise<boolean> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
 
-  const addReview = async (reviewData: Omit<Review, 'id' | 'createdAt'>) => {
-    try {
-      const newReview: Review = {
-        ...reviewData,
-        id: Date.now().toString(),
-        createdAt: new Date().toISOString(),
-      };
+    const { data } = await supabase
+      .from('company_reviews')
+      .select('id')
+      .eq('order_id', orderId)
+      .eq('customer_id', user.id)
+      .maybeSingle();
 
-      const updatedReviews = [newReview, ...reviews];
-      setReviews(updatedReviews);
-      await AsyncStorage.setItem('reviews', JSON.stringify(updatedReviews));
-    } catch (error) {
-      console.error('Failed to add review:', error);
-      throw error;
-    }
-  };
-
-  const getCompanyReviews = (companyId: string) => {
-    return reviews.filter((review) => review.companyId === companyId);
-  };
-
-  const getAverageRating = (companyId: string) => {
-    const companyReviews = getCompanyReviews(companyId);
-    if (companyReviews.length === 0) return 0;
-    const sum = companyReviews.reduce((acc, review) => acc + review.rating, 0);
-    return sum / companyReviews.length;
-  };
+    return !!data;
+  }, []);
 
   return (
-    <ReviewsContext.Provider
-      value={{
-        reviews,
-        addReview,
-        getCompanyReviews,
-        getAverageRating,
-      }}
-    >
+    <ReviewsContext.Provider value={{ submitReview, getCompanyReviews, checkReviewExists }}>
       {children}
     </ReviewsContext.Provider>
   );
