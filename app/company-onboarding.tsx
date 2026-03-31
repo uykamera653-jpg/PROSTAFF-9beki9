@@ -6,9 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Image,
   Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -197,7 +197,7 @@ export default function CompanyOnboardingScreen() {
           <View style={styles.imagesGrid}>
             {images.map((image, index) => (
               <View key={index} style={styles.imageContainer}>
-                <Image source={{ uri: image }} style={styles.image} />
+                <Image source={{ uri: image }} style={styles.image} contentFit="cover" transition={200} />
                 <TouchableOpacity
                   style={[styles.removeButton, { backgroundColor: theme.error }]}
                   onPress={() => handleRemoveImage(index)}

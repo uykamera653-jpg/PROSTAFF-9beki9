@@ -37,7 +37,7 @@ export default function CompanyDashboardScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { t } = useTranslation();
-  const { user, logout } = useAuth();
+  const { user, signOut } = useAuth();
   const { role, isLoading: roleLoading } = useUserRole();
 
   const [selectedTab, setSelectedTab] = useState<OrderStatus>('pending');
@@ -75,7 +75,7 @@ export default function CompanyDashboardScreen() {
   }, [role, roleLoading]);
 
   const handleLogout = async () => {
-    await logout();
+    await signOut();
     router.replace('/');
   };
 

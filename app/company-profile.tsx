@@ -6,9 +6,10 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Image,
   Switch,
+  Linking,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -39,7 +40,7 @@ export default function CompanyProfileScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { t, language } = useTranslation();
-  const { user, logout } = useAuth();
+  const { user, signOut } = useAuth();
   const { darkMode, setDarkMode, setLanguage } = useSettings();
   const { showAlert, AlertComponent } = useAlert();
 
@@ -123,8 +124,21 @@ export default function CompanyProfileScreen() {
   };
 
   const handleLogout = async () => {
-    await logout();
-    router.replace('/');
+    showAlert(
+      'Chiqish',
+      'Hisobdan chiqmoqchimisiz?',
+      [
+        { text: "Yo'q", style: 'cancel' },
+        { text: 'Ha', onPress: async () => {
+          await signOut();
+          router.replace('/');
+        }},
+      ]
+    );
+  };
+
+  const handleContactSupport = () => {
+    Linking.openURL('tel:+998501017695');
   };
 
   if (isLoading) {
@@ -238,7 +252,7 @@ export default function CompanyProfileScreen() {
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Firma rasmlari</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imagesScroll}>
               {profile.images.map((image, index) => (
-                <Image key={index} source={{ uri: image }} style={styles.profileImage} />
+                <Image key={index} source={{ uri: image }} style={styles.profileImage} contentFit="cover" transition={200} />
               ))}
             </ScrollView>
           </Card>
@@ -260,6 +274,17 @@ export default function CompanyProfileScreen() {
               trackColor={{ false: theme.border, true: theme.primary }}
               thumbColor="#FFFFFF"
             />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuItem, { borderBottomColor: theme.border }]}
+            onPress={handleContactSupport}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="headset-outline" size={24} color={theme.primary} />
+            <Text style={[styles.menuText, { color: theme.text }]}>Yordam xizmati</Text>
+            <Text style={{ color: theme.textSecondary, fontSize: 13 }}>+998 50 101 76 95</Text>
+            <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
           </TouchableOpacity>
 
           <TouchableOpacity
