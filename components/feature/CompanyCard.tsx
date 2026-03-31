@@ -11,6 +11,7 @@ interface CompanyCardProps {
   phoneNumber: string;
   address: string;
   photoUrl: string;
+  avatarUrl?: string;
   rating: number;
   isFavorite?: boolean;
   onPress: () => void;
@@ -23,6 +24,7 @@ export function CompanyCard({
   phoneNumber,
   address,
   photoUrl,
+  avatarUrl,
   rating,
   isFavorite = false,
   onPress,
@@ -57,6 +59,21 @@ export function CompanyCard({
             />
           </TouchableOpacity>
         )}
+        {/* Avatar badge overlay */}
+        <View style={[styles.avatarBadge, { borderColor: theme.surface }]}>
+          {avatarUrl ? (
+            <Image
+              source={{ uri: avatarUrl }}
+              style={styles.avatarImage}
+              contentFit="cover"
+              transition={200}
+            />
+          ) : (
+            <View style={[styles.avatarImage, { backgroundColor: theme.primary + '20', alignItems: 'center', justifyContent: 'center' }]}>
+              <Ionicons name="business" size={20} color={theme.primary} />
+            </View>
+          )}
+        </View>
       </View>
       
       <View style={styles.content}>
@@ -108,6 +125,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.md,
+    paddingTop: spacing.xl + spacing.sm,
   },
   header: {
     flexDirection: 'row',
@@ -160,5 +178,19 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarBadge: {
+    position: 'absolute',
+    bottom: -20,
+    left: spacing.md,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 3,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
 });

@@ -35,6 +35,7 @@ export interface Company {
   workingHours: string;
   experience: string;
   rating: number;
+  avatarUrl?: string | null;
 }
 
 export interface ServiceOrder {

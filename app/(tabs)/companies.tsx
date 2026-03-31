@@ -86,6 +86,7 @@ export default function CompaniesScreen() {
       phoneNumber={item.phoneNumber}
       address={item.address}
       photoUrl={item.photoUrls[0] || 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800'}
+      avatarUrl={item.avatarUrl || undefined}
       rating={item.rating}
       isFavorite={user ? isFavorite(item.id, user.id) : false}
       onPress={() => handleCompanyPress(item.id)}

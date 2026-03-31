@@ -88,6 +88,7 @@ export function CompaniesProvider({ children }: { children: ReactNode }) {
           workingHours: '9:00 - 18:00',
           experience: '0 yil',
           rating: parseFloat(company.rating) || 0,
+          avatarUrl: company.avatar_url || null,
         }));
 
         setCompanies(mappedCompanies);
