@@ -83,10 +83,14 @@ export default function WorkerDashboardScreen() {
   const [workerLocation, setWorkerLocation] = useState<WorkerLocation | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [orderTimers, setOrderTimers] = useState<{ [orderId: string]: number }>({});
+  // Cancelled order alert state
+  const [cancelledOrder, setCancelledOrder] = useState<{ id: string; title: string } | null>(null);
   const { showAlert, AlertComponent } = useAlert();
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const loadOrdersRef = useRef<() => void>(() => {});
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Track order IDs currently shown to worker (for cancellation detection)
+  const currentOrderIdsRef = useRef<Set<string>>(new Set());
   
   // Push notifications
   const { settings: notifSettings } = useNotificationSettings();
@@ -275,6 +279,28 @@ export default function WorkerDashboardScreen() {
           });
       }
       
+      // Detect cancellations: orders that were in accepted/in_progress tab but disappeared
+      if (selectedTab !== 'pending') {
+        const newIds = new Set(processedOrders.map((o: any) => o.id));
+        currentOrderIdsRef.current.forEach((oldId) => {
+          if (!newIds.has(oldId)) {
+            // Check if this order was cancelled
+            supabase
+              .from('orders')
+              .select('id, title, status')
+              .eq('id', oldId)
+              .single()
+              .then(({ data }) => {
+                if (data?.status === 'cancelled') {
+                  setCancelledOrder({ id: data.id, title: data.title });
+                }
+              })
+              .catch(() => {});
+          }
+        });
+      }
+      currentOrderIdsRef.current = new Set(processedOrders.map((o: any) => o.id));
+
       setOrders(processedOrders);
     } catch {
       // Silent
@@ -312,7 +338,17 @@ export default function WorkerDashboardScreen() {
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'orders' },
-        () => { loadOrdersRef.current(); }
+        (payload) => {
+          // Detect if an order assigned to this worker was cancelled
+          if (
+            payload.new?.status === 'cancelled' &&
+            (payload.new?.worker_id === user?.id ||
+              (Array.isArray(payload.new?.accepted_workers) && payload.new.accepted_workers.includes(user?.id)))
+          ) {
+            setCancelledOrder({ id: payload.new.id, title: payload.new.title || 'Buyurtma' });
+          }
+          loadOrdersRef.current();
+        }
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -886,6 +922,88 @@ export default function WorkerDashboardScreen() {
         }}
         initialLocation={workerLocation || undefined}
       />
+
+      {/* Cancelled order notification modal */}
+      {cancelledOrder ? (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.55)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 9999,
+          }}
+        >
+          <View
+            style={{
+              width: '85%',
+              maxWidth: 360,
+              backgroundColor: 'white',
+              borderRadius: borderRadius.lg,
+              padding: spacing.xl,
+              alignItems: 'center',
+              gap: spacing.md,
+              elevation: 8,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 12,
+            }}
+          >
+            <View
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: 36,
+                backgroundColor: '#EF444420',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Ionicons name="close-circle" size={44} color="#EF4444" />
+            </View>
+            <Text
+              style={[
+                typography.h3,
+                { color: '#111827', fontWeight: '700', textAlign: 'center' },
+              ]}
+            >
+              Buyurtma bekor qilindi
+            </Text>
+            <Text
+              style={[
+                typography.body,
+                { color: '#6B7280', textAlign: 'center', lineHeight: 22 },
+              ]}
+              numberOfLines={3}
+            >
+              "{cancelledOrder.title}" buyurtmasi buyurtmachi tomonidan bekor qilindi.
+            </Text>
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#EF4444',
+                borderRadius: borderRadius.md,
+                paddingVertical: spacing.md,
+                paddingHorizontal: spacing.xxl,
+                minWidth: 140,
+                alignItems: 'center',
+                minHeight: 48,
+              }}
+              onPress={() => {
+                setCancelledOrder(null);
+                loadOrders();
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
 
       <AlertComponent />
     </View>

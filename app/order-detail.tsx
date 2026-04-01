@@ -421,7 +421,7 @@ export default function OrderDetailScreen() {
         {/* ── WORKER INFO CARD (customer only, auto-updates) ── */}
         {isCustomer && (
           <Animated.View style={{ backgroundColor: highlightColor, borderRadius: borderRadius.lg }}>
-            {order.status === 'accepted' && worker ? (
+            {order.status === 'accepted' && order.worker_id && worker ? (
               <Card>
                 {/* Header */}
                 <View style={styles.workerCardHeader}>
