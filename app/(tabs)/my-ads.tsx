@@ -218,13 +218,28 @@ export default function MyAdsScreen() {
 
   const handleCancelOrder = async (orderId: string) => {
     try {
+      // First verify order is still pending
+      const { data: current, error: checkErr } = await supabase
+        .from('orders')
+        .select('status')
+        .eq('id', orderId)
+        .eq('customer_id', user!.id)
+        .single();
+      if (checkErr) throw checkErr;
+      if (current?.status !== 'pending') {
+        Alert.alert('Xatolik', 'Bu buyurtma allaqachon qabul qilingan yoki yakunlangan');
+        loadOrders();
+        return;
+      }
       const { error } = await supabase
         .from('orders')
         .update({ status: 'cancelled' })
         .eq('id', orderId)
-        .eq('customer_id', user!.id);
+        .eq('customer_id', user!.id)
+        .eq('status', 'pending');
       if (error) throw error;
       setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      Alert.alert('Bajarildi', 'Buyurtma bekor qilindi');
     } catch (err: any) {
       Alert.alert('Xatolik', "Buyurtmani bekor qilib bo'lmadi: " + (err.message || ''));
     }
