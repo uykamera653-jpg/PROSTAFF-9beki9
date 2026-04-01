@@ -331,20 +331,32 @@ export default function WorkerDashboardScreen() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        showAlert('Ruxsat kerak', 'Joylashuvni kuzatish uchun ruxsat bering');
+        showAlert('Ruxsat kerak', 'Joylashuvni kuzatish uchun sozlamalardan lokatsiya ruxsatini bering');
         return;
       }
+
+      // Try last known position first for immediate update
+      try {
+        const last = await Location.getLastKnownPositionAsync();
+        if (last) {
+          const { latitude, longitude } = last.coords;
+          setWorkerLocation({ latitude, longitude });
+          await supabase.from('workers').update({ latitude, longitude, location_updated_at: new Date().toISOString() }).eq('id', user.id);
+        }
+      } catch { /* ignore */ }
+
       if (locationSubscriptionRef.current) locationSubscriptionRef.current.remove();
       locationSubscriptionRef.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Balanced, distanceInterval: 50, timeInterval: 30000 },
+        { accuracy: Location.Accuracy.Low, distanceInterval: 50, timeInterval: 30000 },
         async (location) => {
           const { latitude, longitude } = location.coords;
           setWorkerLocation({ latitude, longitude });
           await supabase.from('workers').update({ latitude, longitude, location_updated_at: new Date().toISOString() }).eq('id', user.id);
         }
       );
-    } catch {
-      showAlert('Xatolik', 'Joylashuvni kuzatish boshlanmadi');
+    } catch (e) {
+      console.error('startLocationTracking error:', e);
+      showAlert('Xatolik', 'Joylashuvni kuzatish boshlanmadi. GPS ni yoqib, qayta urining.');
     }
   };
 

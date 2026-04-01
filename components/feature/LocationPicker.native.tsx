@@ -62,17 +62,49 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
   const getCurrentLocation = async () => {
     try {
       setIsLoading(true);
+
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Prostaff', 'Lokatsiya ruxsati berilmadi');
+        Alert.alert('Prostaff', 'Lokatsiya ruxsati berilmadi. Telefon sozlamalaridan ruxsat bering.');
         setIsLoading(false);
         return;
       }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-      setSelectedLocation(coords);
-      moveMapTo(coords.latitude, coords.longitude);
-      await fetchAddress(coords.latitude, coords.longitude);
+
+      let coords: { latitude: number; longitude: number } | null = null;
+
+      // 1. Try last known position first (fast)
+      try {
+        const last = await Location.getLastKnownPositionAsync();
+        if (last) {
+          coords = { latitude: last.coords.latitude, longitude: last.coords.longitude };
+        }
+      } catch { /* ignore */ }
+
+      // 2. Get fresh position with timeout fallback
+      if (!coords) {
+        try {
+          const loc = await Promise.race([
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }),
+            new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)),
+          ]) as Location.LocationObject;
+          coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+        } catch {
+          // 3. Try lowest accuracy as final fallback
+          try {
+            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Lowest });
+            coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+          } catch (e2) {
+            console.error('Location fallback failed:', e2);
+            Alert.alert('Xatolik', 'Joylashuv aniqlanmadi. Telefon GPS ni yoqib, qayta urining.');
+          }
+        }
+      }
+
+      if (coords) {
+        setSelectedLocation(coords);
+        moveMapTo(coords.latitude, coords.longitude);
+        await fetchAddress(coords.latitude, coords.longitude);
+      }
     } catch (e) {
       console.error('Location error:', e);
     } finally {
