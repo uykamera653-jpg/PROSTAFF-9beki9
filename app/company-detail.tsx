@@ -53,6 +53,7 @@ export default function CompanyDetailScreen() {
   const [company, setCompany] = useState<CompanyData | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'info' | 'reviews'>('info');
   const [screenWidth, setScreenWidth] = useState(() => Math.max(375, Dimensions.get('window').width));
 
   useEffect(() => {
@@ -269,59 +270,96 @@ export default function CompanyDetailScreen() {
           ) : null}
         </Card>
 
-        {/* About */}
-        {company.description ? (
-          <Card>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Firma haqida</Text>
-            <Text style={[styles.description, { color: theme.textSecondary }]}>
-              {company.description}
+        {/* Tabs */}
+        <View style={[styles.tabsRow, { borderBottomColor: theme.border, backgroundColor: theme.surface }]}>
+          <TouchableOpacity
+            style={[styles.tabBtn, activeTab === 'info' && { borderBottomColor: theme.primary, borderBottomWidth: 2.5 }]}
+            onPress={() => setActiveTab('info')}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="information-circle-outline" size={18} color={activeTab === 'info' ? theme.primary : theme.textSecondary} />
+            <Text style={[styles.tabBtnText, { color: activeTab === 'info' ? theme.primary : theme.textSecondary }]}>
+              Ma'lumot
             </Text>
-          </Card>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabBtn, activeTab === 'reviews' && { borderBottomColor: theme.primary, borderBottomWidth: 2.5 }]}
+            onPress={() => setActiveTab('reviews')}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="chatbubble-outline" size={18} color={activeTab === 'reviews' ? theme.primary : theme.textSecondary} />
+            <Text style={[styles.tabBtnText, { color: activeTab === 'reviews' ? theme.primary : theme.textSecondary }]}>
+              {reviews.length > 0 ? `Sharhlar (${reviews.length})` : 'Sharhlar'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Info Tab Content */}
+        {activeTab === 'info' ? (
+          company.description ? (
+            <Card style={styles.tabCard}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Firma haqida</Text>
+              <Text style={[styles.description, { color: theme.textSecondary }]}>
+                {company.description}
+              </Text>
+            </Card>
+          ) : (
+            <View style={styles.emptyTab}>
+              <Ionicons name="information-circle-outline" size={48} color={theme.textTertiary} />
+              <Text style={[styles.emptyTabText, { color: theme.textSecondary }]}>
+                Firma haqida ma'lumot yo'q
+              </Text>
+            </View>
+          )
         ) : null}
 
-        {/* Reviews */}
-        <Card>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Sharhlar</Text>
-
-          {reviews.length === 0 ? (
-            <Text style={[styles.noReviews, { color: theme.textSecondary }]}>
-              Hali sharh qoldirilmagan
-            </Text>
-          ) : (
-            <View style={styles.reviewsList}>
-              {reviews.map((review) => (
-                <View
-                  key={review.id}
-                  style={[styles.reviewItem, { borderBottomColor: theme.border }]}
-                >
-                  <View style={styles.reviewHeader}>
-                    <Text style={[styles.reviewerName, { color: theme.text }]}>
-                      {review.customer_name}
-                    </Text>
-                    <View style={styles.reviewRating}>
-                      {[...Array(5)].map((_, i) => (
-                        <Ionicons
-                          key={i}
-                          name={i < review.rating ? 'star' : 'star-outline'}
-                          size={13}
-                          color="#FFB800"
-                        />
-                      ))}
+        {/* Reviews Tab Content */}
+        {activeTab === 'reviews' ? (
+          <Card style={styles.tabCard}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Sharhlar</Text>
+            {reviews.length === 0 ? (
+              <View style={styles.emptyReviews}>
+                <Ionicons name="chatbubble-outline" size={48} color={theme.textTertiary} />
+                <Text style={[styles.noReviews, { color: theme.textSecondary }]}>
+                  Hali sharh qoldirilmagan
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.reviewsList}>
+                {reviews.map((review) => (
+                  <View
+                    key={review.id}
+                    style={[styles.reviewItem, { borderBottomColor: theme.border }]}
+                  >
+                    <View style={styles.reviewHeader}>
+                      <Text style={[styles.reviewerName, { color: theme.text }]}>
+                        {review.customer_name}
+                      </Text>
+                      <View style={styles.reviewRating}>
+                        {[...Array(5)].map((_, i) => (
+                          <Ionicons
+                            key={i}
+                            name={i < review.rating ? 'star' : 'star-outline'}
+                            size={13}
+                            color="#FFB800"
+                          />
+                        ))}
+                      </View>
                     </View>
-                  </View>
-                  {review.comment ? (
-                    <Text style={[styles.reviewComment, { color: theme.textSecondary }]}>
-                      {review.comment}
+                    {review.comment ? (
+                      <Text style={[styles.reviewComment, { color: theme.textSecondary }]}>
+                        {review.comment}
+                      </Text>
+                    ) : null}
+                    <Text style={[styles.reviewDate, { color: theme.textTertiary }]}>
+                      {new Date(review.created_at).toLocaleDateString('uz-UZ')}
                     </Text>
-                  ) : null}
-                  <Text style={[styles.reviewDate, { color: theme.textTertiary }]}>
-                    {new Date(review.created_at).toLocaleDateString('uz-UZ')}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </Card>
+                  </View>
+                ))}
+              </View>
+            )}
+          </Card>
+        ) : null}
 
         {/* Order button */}
         {company.is_online ? (
@@ -452,6 +490,42 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flex: 1,
   },
+  tabsRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  tabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+  },
+  tabBtnText: {
+    ...typography.bodyMedium,
+    fontWeight: '600',
+  },
+  tabCard: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  emptyTab: {
+    alignItems: 'center',
+    paddingVertical: spacing.xxl,
+    gap: spacing.md,
+  },
+  emptyTabText: {
+    ...typography.body,
+    textAlign: 'center',
+  },
+  emptyReviews: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+    gap: spacing.md,
+  },
   sectionTitle: {
     ...typography.h4,
     fontWeight: '700',
@@ -468,7 +542,6 @@ const styles = StyleSheet.create({
   noReviews: {
     ...typography.body,
     textAlign: 'center',
-    paddingVertical: spacing.lg,
   },
   reviewsList: { gap: spacing.md },
   reviewItem: {
