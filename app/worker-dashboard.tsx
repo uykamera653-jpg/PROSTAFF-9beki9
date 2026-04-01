@@ -300,7 +300,11 @@ export default function WorkerDashboardScreen() {
           if (payload.new?.status === 'pending' && notifSettings.enabled && notifSettings.new_orders) {
             if (notifSettings.vibration) Vibration.vibrate([0, 400, 200, 400]);
             if (notifSettings.sound !== false) {
-              playNotificationSound(notifSettings.volume ?? 1.0);
+              playNotificationSound(
+                notifSettings.volume ?? 1.0,
+                'Yangi buyurtma!',
+                (payload.new?.title || 'Yangi ish buyurtmasi') + (payload.new?.location ? ' — ' + payload.new.location : '')
+              );
             }
           }
           loadOrdersRef.current();

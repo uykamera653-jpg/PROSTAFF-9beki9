@@ -12,23 +12,27 @@ if (Platform.OS !== 'web') {
   Device = require('expo-device');
 
   // Configure notification behavior (only on mobile)
+  // Foreground notification handler — app ochiq bo'lsa ham ovoz chiqaradi
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
       shouldPlaySound: true,
       shouldSetBadge: true,
       priority: Notifications.AndroidNotificationPriority?.MAX ?? 5,
+      shouldShowBanner: true,
+      shouldShowList: true,
     }),
   });
 
-  // Create Android notification channel with sound and vibration
+  // Create Android notification channels
   if (Platform.OS === 'android') {
+    // HIGH priority channel — new-orders
     Notifications.setNotificationChannelAsync('new-orders', {
       name: 'Yangi buyurtmalar',
       description: 'Yangi buyurtmalar haqida bildirishnomalar',
       importance: Notifications.AndroidImportance?.MAX ?? 5,
-      vibrationPattern: [0, 300, 200, 300],
-      sound: 'default',
+      vibrationPattern: [0, 400, 200, 400],
+      sound: 'default',          // OS default notification sound
       enableLights: true,
       lightColor: '#FF6B35',
       enableVibrate: true,
@@ -37,11 +41,13 @@ if (Platform.OS !== 'web') {
       bypassDnd: true,
     });
 
+    // Default channel
     Notifications.setNotificationChannelAsync('default', {
-      name: 'Default',
+      name: 'Umumiy',
       importance: Notifications.AndroidImportance?.MAX ?? 5,
       vibrationPattern: [0, 250, 250, 250],
       sound: 'default',
+      showBadge: true,
     });
   }
 }

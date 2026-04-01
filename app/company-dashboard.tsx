@@ -215,9 +215,13 @@ export default function CompanyDashboardScreen() {
     }
   };
 
-  const handleNotificationSound = async () => {
+  const handleNotificationSound = async (orderTitle?: string, orderLocation?: string) => {
     if (!notifSettings.enabled || !notifSettings.sound || !notifSettings.new_orders) return;
-    await playNotificationSound(notifSettings.volume ?? 1.0);
+    await playNotificationSound(
+      notifSettings.volume ?? 1.0,
+      'Yangi buyurtma!',
+      (orderTitle || 'Yangi xizmat buyurtmasi') + (orderLocation ? ' — ' + orderLocation : '')
+    );
   };
 
   const setupRealtime = () => {
@@ -232,7 +236,7 @@ export default function CompanyDashboardScreen() {
           if (notifSettings.enabled && notifSettings.vibration && notifSettings.new_orders) {
             Vibration.vibrate([0, 400, 200, 400]);
           }
-          await handleNotificationSound();
+          await handleNotificationSound(payload.new?.title, payload.new?.location);
         }
         loadOrders();
       })
