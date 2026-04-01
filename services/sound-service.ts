@@ -14,35 +14,15 @@ let _sound: Audio.Sound | null = null;
 let _isPlaying = false;
 let _isPlayingTimeout: ReturnType<typeof setTimeout> | null = null;
 
-// ─── Embedded beep sound (base64 WAV — 440Hz, 0.4s) ─────────────────────────
-// Bu lokal audio — internet shart emas, har doim ishlaydi
-const BEEP_BASE64 =
-  'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAA' +
-  'EAAQAARKwAAIhYAQACABAAZGF0YVQGAACBgH98eXZ0cnBvbm1s' +
-  'a2pqaWloZ2dmZmZmZ2doaWpra2xtbm9wcXJzdHV2d3h5enx9f4' +
-  'CBgoOEhYaHiImKi4yNjo+QkZKTlJWWl5iZmpucnZ6foKGio6Sl' +
-  'pqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr/AwcLDxMXGx8jJys' +
-  'vMzc7P0NHS09TV1tfY2drb3N3e3+Dh4uPk5ebn6Onq6+zt7u/w' +
-  '8fLz9PX29/j5+vv8/f7/AAECAwQFBgcICQoLDA0ODxAREhMUFRYX' +
-  'GBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+' +
-  'P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2Rl' +
-  'ZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn+AgYKDhIWGh4iJiouM' +
-  'jY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq+wsbKz' +
-  'tLW2t7i5uru8vb6/wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna' +
-  '29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/wAB' +
-  'AgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJico' +
-  'KSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5P' +
-  'UFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2' +
-  'd3h5ent8fX5/gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5yd' +
-  'np+goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2+v8DBwsPExc' +
-  'bHyMnKy8zNzs/Q0dLT1NXW19jZ2tvc3d7f4OHi4+Tl5ufn6Onq6+' +
-  'zt7u/w8fLz9PX29/j5+vv8/f7/';
+// Android channel version — increment when channel config changes
+// This forces Android to recreate the channel with new settings (bypassDnd, etc.)
+const ANDROID_CHANNEL_ID = 'new-orders-v4';
 
-// Reliable CDN URLs (fallback)
+// Reliable public CDN audio URLs
 const SOUND_URLS = [
-  'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3',
-  'https://cdn.freesound.org/previews/250/250629_4486188-lq.mp3',
-  'https://www.soundjay.com/buttons/sounds/beep-01a.mp3',
+  'https://cdn.pixabay.com/download/audio/2022/03/10/audio_c8c8a73467.mp3',
+  'https://cdn.pixabay.com/download/audio/2021/08/04/audio_0625c1539c.mp3',
+  'https://cdn.pixabay.com/download/audio/2022/11/17/audio_febc508520.mp3',
 ];
 
 // ─── Force reset playing state ───────────────────────────────────────────────
@@ -54,22 +34,54 @@ function resetPlayingState() {
   }
 }
 
-// ─── PRIMARY: OS-level local notification ────────────────────────────────────
+// ─── Android: delete old channel and create fresh one ───────────────────────
+async function ensureAndroidChannel() {
+  if (!Notifications || Platform.OS !== 'android') return;
+
+  // Delete old channels to clear cached settings
+  const oldChannels = ['new-orders', 'new-orders-v2', 'new-orders-v3'];
+  for (const ch of oldChannels) {
+    try {
+      await Notifications.deleteNotificationChannelAsync(ch);
+    } catch { /* ignore if not exists */ }
+  }
+
+  // Create fresh channel with all required settings
+  await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
+    name: 'Yangi buyurtmalar',
+    description: 'Yangi buyurtmalar uchun bildirishnomalar',
+    importance: Notifications.AndroidImportance?.MAX ?? 5,
+    vibrationPattern: [0, 500, 300, 500, 300, 700],
+    sound: 'default',
+    enableLights: true,
+    lightColor: '#FF6B35',
+    enableVibrate: true,
+    showBadge: true,
+    bypassDnd: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility?.PUBLIC ?? 1,
+  }).catch((e: any) => console.warn('[SoundService] channel create failed:', e));
+}
+
+// Run channel setup once on import (mobile only)
+if (Platform.OS === 'android' && Notifications) {
+  ensureAndroidChannel().catch(() => {});
+}
+
+// ─── PRIMARY: OS-level local notification (bypassDnd) ────────────────────────
 async function playViaLocalNotification(title: string, body: string): Promise<boolean> {
   if (!Notifications || Platform.OS === 'web') return false;
   try {
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('new-orders', {
-        name: 'Yangi buyurtmalar',
-        importance: Notifications.AndroidImportance?.MAX ?? 5,
-        vibrationPattern: [0, 500, 200, 500],
-        sound: 'default',
-        enableVibrate: true,
-        showBadge: true,
-        bypassDnd: true,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility?.PUBLIC ?? 1,
-      }).catch(() => {});
-    }
+    // Ensure Android foreground handler plays sound
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        priority: Notifications.AndroidNotificationPriority?.MAX ?? 5,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
 
     await Notifications.scheduleNotificationAsync({
       content: {
@@ -77,9 +89,9 @@ async function playViaLocalNotification(title: string, body: string): Promise<bo
         body,
         sound: true,
         priority: 'max',
-        vibrate: [0, 500, 200, 500],
-        data: { type: 'new_order' },
-        ...(Platform.OS === 'android' ? { channelId: 'new-orders' } : {}),
+        vibrate: [0, 500, 300, 500],
+        data: { type: 'new_order', ts: Date.now() },
+        ...(Platform.OS === 'android' ? { channelId: ANDROID_CHANNEL_ID } : {}),
       },
       trigger: null,
     });
@@ -90,50 +102,32 @@ async function playViaLocalNotification(title: string, body: string): Promise<bo
   }
 }
 
-// ─── SECONDARY: expo-av audio ────────────────────────────────────────────────
+// ─── SECONDARY: expo-av streaming audio ──────────────────────────────────────
 async function playViaAv(volume: number): Promise<boolean> {
   if (_isPlaying) resetPlayingState();
 
   try {
     _isPlaying = true;
-    _isPlayingTimeout = setTimeout(() => { resetPlayingState(); }, 5000);
+    _isPlayingTimeout = setTimeout(() => { resetPlayingState(); }, 8000);
 
+    // Set audio mode — playsInSilentModeIOS = true is KEY for iOS silent mode
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,   // iOS jim rejimida ham chiqaradi
+      playsInSilentModeIOS: true,
       staysActiveInBackground: false,
       shouldDuckAndroid: false,
       playThroughEarpieceAndroid: false,
     }).catch(() => {});
 
-    // Unload previous sound
+    // Unload previous
     if (_sound) {
       try { await _sound.stopAsync(); await _sound.unloadAsync(); } catch { /* ignore */ }
       _sound = null;
     }
 
-    const safeVol = Math.max(0.5, Math.min(1.0, volume));
+    const safeVol = Math.max(0.6, Math.min(1.0, volume));
 
-    // 1. Try embedded base64 beep first (no internet needed)
-    try {
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: BEEP_BASE64 },
-        { shouldPlay: true, volume: safeVol, isLooping: false },
-        (status) => {
-          if (status.isLoaded && status.didJustFinish) {
-            sound.unloadAsync().catch(() => {});
-            if (_sound === sound) _sound = null;
-            resetPlayingState();
-          }
-        }
-      );
-      _sound = sound;
-      return true;
-    } catch (e1) {
-      console.warn('[SoundService] base64 beep failed, trying CDN:', e1);
-    }
-
-    // 2. Fallback: CDN URLs
+    // Try CDN URLs
     for (const url of SOUND_URLS) {
       try {
         const { sound } = await Audio.Sound.createAsync(
@@ -148,8 +142,12 @@ async function playViaAv(volume: number): Promise<boolean> {
           }
         );
         _sound = sound;
+        console.log('[SoundService] Playing via AV:', url);
         return true;
-      } catch { continue; }
+      } catch (e) {
+        console.warn('[SoundService] AV URL failed:', url, e);
+        continue;
+      }
     }
 
     resetPlayingState();
@@ -164,33 +162,39 @@ async function playViaAv(volume: number): Promise<boolean> {
 // ─── PUBLIC API ───────────────────────────────────────────────────────────────
 
 /**
- * Yangi buyurtma uchun signal — HECH QANDAY SHART YO'Q:
- * 1. Vibration (har doim)
- * 2. OS local notification (bypassDnd — jim rejimida ham)
- * 3. expo-av: embedded beep → CDN fallback
+ * Yangi buyurtma signali:
+ * 1. Vibration (darhol, har doim)
+ * 2. OS notification (bypassDnd kanal — jim rejimida ham ovoz chiqaradi)
+ * 3. expo-av CDN audio (parallel)
  */
 export async function playNotificationSound(
   volume = 1.0,
   title = 'Yangi buyurtma!',
   body = 'Sizga yangi buyurtma keldi'
 ): Promise<void> {
-  // 1. VIBRATSIYA — har doim, birinchi navbatda
+  console.log('[SoundService] playNotificationSound called');
+
+  // 1. VIBRATSIYA — darhol, parallel
   if (Platform.OS !== 'web') {
-    Vibration.cancel();
-    Vibration.vibrate([0, 400, 150, 400, 150, 600]);
+    try {
+      Vibration.cancel();
+      Vibration.vibrate([0, 500, 200, 500, 200, 800]);
+    } catch (e) {
+      console.warn('[SoundService] Vibration failed:', e);
+    }
   }
 
-  // 2. OS notification (async, parallel) — tizim ovozi, bypassDnd
-  playViaLocalNotification(title, body).catch(() => {});
-
-  // 3. expo-av (async, parallel) — embedded beep, internet shart emas
-  playViaAv(volume).catch(() => {});
+  // 2 & 3 — parallel (OS notification + expo-av)
+  await Promise.allSettled([
+    playViaLocalNotification(title, body),
+    playViaAv(volume),
+  ]);
 }
 
 /** Aktiv ovozni to'xtatadi */
 export async function stopNotificationSound(): Promise<void> {
   resetPlayingState();
-  Vibration.cancel();
+  if (Platform.OS !== 'web') Vibration.cancel();
   if (_sound) {
     try { await _sound.stopAsync(); await _sound.unloadAsync(); } catch { /* ignore */ }
     _sound = null;

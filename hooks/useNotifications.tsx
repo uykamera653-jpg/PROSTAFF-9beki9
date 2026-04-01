@@ -26,13 +26,13 @@ if (Platform.OS !== 'web') {
 
   // Create Android notification channels
   if (Platform.OS === 'android') {
-    // HIGH priority channel — new-orders
-    Notifications.setNotificationChannelAsync('new-orders', {
+    // v4 channel — always recreated fresh (bypassDnd=true)
+    Notifications.setNotificationChannelAsync('new-orders-v4', {
       name: 'Yangi buyurtmalar',
       description: 'Yangi buyurtmalar haqida bildirishnomalar',
       importance: Notifications.AndroidImportance?.MAX ?? 5,
-      vibrationPattern: [0, 400, 200, 400],
-      sound: 'default',          // OS default notification sound
+      vibrationPattern: [0, 500, 300, 500, 300, 700],
+      sound: 'default',
       enableLights: true,
       lightColor: '#FF6B35',
       enableVibrate: true,
