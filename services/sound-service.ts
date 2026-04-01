@@ -1,96 +1,116 @@
 /**
- * SoundService — buyurtma kelganda ovoz va vibratsiya
+ * SoundService v8 — Eng ishonchli yondashuv:
+ * 1. Vibration (har doim ishlaydi)
+ * 2. expo-av — har safar YANGI Sound ob'ekti (preload muammodan xoli)
+ * 3. expo-notifications bypassDnd (ilova yopiq bo'lsa ham)
  *
- * Asosiy yondashuv: Sound ob'ekti startup da preload qilinadi va warm state da saqlanadi.
- * Realtime event kelganda darhol play qilinadi — hech qanday kechikish yo'q.
- *
- * Android APK: expo-av (preloaded WAV) + Vibration + expo-notifications (bypassDnd)
- * Web:         Web Audio API singleton AudioContext
- * iOS:         expo-av (preloaded) + playsInSilentModeIOS
+ * Test vs Real farqi yo'q — ikkalasi ham bir xil kod ishlatadi.
  */
 import { Platform, Vibration } from 'react-native';
 
-// ─── expo-av (mobile only) ───────────────────────────────────────────────────
+// ─── Dynamic imports (mobile only) ───────────────────────────────────────────
 let Audio: any = null;
 let FileSystem: any = null;
-if (Platform.OS !== 'web') {
-  try { Audio = require('expo-av').Audio; } catch { /* ignore */ }
-  try { FileSystem = require('expo-file-system'); } catch { /* ignore */ }
-}
-
-// ─── expo-notifications (mobile only) ────────────────────────────────────────
 let Notifications: any = null;
+
 if (Platform.OS !== 'web') {
-  try { Notifications = require('expo-notifications'); } catch { /* ignore */ }
+  try { Audio = require('expo-av').Audio; } catch (e) { console.warn('[Sound] expo-av missing'); }
+  try { FileSystem = require('expo-file-system'); } catch (e) { console.warn('[Sound] expo-file-system missing'); }
+  try { Notifications = require('expo-notifications'); } catch (e) { console.warn('[Sound] expo-notifications missing'); }
 }
 
-// ─── WAV generator (pure JS, no deps) ────────────────────────────────────────
-function generateBeepWav(): Uint8Array {
-  const sampleRate    = 22050;
-  const duration      = 0.9;
-  const numSamples    = Math.floor(sampleRate * duration);
-  const bitsPerSample = 16;
-  const blockAlign    = bitsPerSample / 8;
-  const byteRate      = sampleRate * blockAlign;
-  const dataSize      = numSamples * blockAlign;
-  const buf           = new ArrayBuffer(44 + dataSize);
-  const view          = new DataView(buf);
+// ─── WAV Generator ───────────────────────────────────────────────────────────
+function buildWavBytes(): Uint8Array {
+  const sampleRate = 22050;
+  const totalSec   = 1.0;
+  const n          = Math.floor(sampleRate * totalSec);
+  const dataBytes  = n * 2;
+  const buf        = new ArrayBuffer(44 + dataBytes);
+  const dv         = new DataView(buf);
 
-  const ws = (offset: number, str: string) => {
-    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  const writeStr = (off: number, s: string) => {
+    for (let i = 0; i < s.length; i++) dv.setUint8(off + i, s.charCodeAt(i));
   };
-  ws(0,  'RIFF');  view.setUint32(4,  36 + dataSize, true);
-  ws(8,  'WAVE');  ws(12, 'fmt ');
-  view.setUint32(16, 16,          true);
-  view.setUint16(20, 1,           true); // PCM
-  view.setUint16(22, 1,           true); // mono
-  view.setUint32(24, sampleRate,  true);
-  view.setUint32(28, byteRate,    true);
-  view.setUint16(32, blockAlign,  true);
-  view.setUint16(34, bitsPerSample, true);
-  ws(36, 'data');  view.setUint32(40, dataSize, true);
+  writeStr(0, 'RIFF'); dv.setUint32(4, 36 + dataBytes, true);
+  writeStr(8, 'WAVE'); writeStr(12, 'fmt ');
+  dv.setUint32(16, 16, true);
+  dv.setUint16(20, 1, true);   // PCM
+  dv.setUint16(22, 1, true);   // mono
+  dv.setUint32(24, sampleRate, true);
+  dv.setUint32(28, sampleRate * 2, true);
+  dv.setUint16(32, 2, true);
+  dv.setUint16(34, 16, true);
+  writeStr(36, 'data'); dv.setUint32(40, dataBytes, true);
 
-  const beeps = [
-    { freq: 880,  start: 0.00, end: 0.20 },
-    { freq: 1100, start: 0.28, end: 0.48 },
-    { freq: 1320, start: 0.56, end: 0.80 },
+  // 3-tone beep: 880 → 1100 → 1320 Hz
+  const tones = [
+    { f: 880,  s: 0.00, e: 0.22 },
+    { f: 1100, s: 0.30, e: 0.52 },
+    { f: 1320, s: 0.60, e: 0.85 },
   ];
-
-  for (let i = 0; i < numSamples; i++) {
+  for (let i = 0; i < n; i++) {
     const t = i / sampleRate;
-    let sample = 0;
-    for (const b of beeps) {
-      if (t >= b.start && t < b.end) {
-        const local = t - b.start;
-        const len   = b.end - b.start;
-        const env   = Math.min(local / 0.015, 1, (len - local) / 0.015);
-        sample = Math.sin(2 * Math.PI * b.freq * t) * env * 0.9;
+    let v = 0;
+    for (const tone of tones) {
+      if (t >= tone.s && t < tone.e) {
+        const local = t - tone.s;
+        const len   = tone.e - tone.s;
+        const env   = Math.min(local / 0.01, 1.0, (len - local) / 0.01);
+        v = Math.sin(2 * Math.PI * tone.f * t) * env * 0.88;
         break;
       }
     }
-    view.setInt16(44 + i * 2, Math.round(sample * 32767), true);
+    dv.setInt16(44 + i * 2, Math.round(v * 32767), true);
   }
   return new Uint8Array(buf);
 }
 
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 8192;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+function bytesToBase64(u8: Uint8Array): string {
+  let s = '';
+  const chunk = 8192;
+  for (let i = 0; i < u8.length; i += chunk) {
+    s += String.fromCharCode(...u8.subarray(i, i + chunk));
   }
-  return btoa(binary);
+  return btoa(s);
 }
 
-// ─── Preloaded sound state ────────────────────────────────────────────────────
-let _preloadedSound: any  = null;   // expo-av Sound object, always warm
-let _wavUri: string | null = null;   // cached file URI
-let _isInitializing = false;
-let _initDone = false;
-let _audioModeSet = false;
+// ─── WAV file cache ───────────────────────────────────────────────────────────
+let _wavPath: string | null = null;
 
-async function setAudioModeOnce(): Promise<void> {
-  if (_audioModeSet || !Audio) return;
+async function getWavPath(): Promise<string | null> {
+  if (!FileSystem) return null;
+
+  // Check cache
+  if (_wavPath) {
+    try {
+      const info = await FileSystem.getInfoAsync(_wavPath);
+      if (info.exists) return _wavPath;
+    } catch { /* fall through */ }
+    _wavPath = null;
+  }
+
+  try {
+    const dir  = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+    if (!dir) return null;
+    const path = dir + 'prostaff_beep_v8.wav';
+    const b64  = bytesToBase64(buildWavBytes());
+    await FileSystem.writeAsStringAsync(path, b64, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    _wavPath = path;
+    console.log('[Sound] WAV written to:', path);
+    return path;
+  } catch (e) {
+    console.warn('[Sound] WAV write error:', e);
+    return null;
+  }
+}
+
+// ─── Audio mode (set once) ────────────────────────────────────────────────────
+let _audioModeOk = false;
+
+async function ensureAudioMode(): Promise<void> {
+  if (_audioModeOk || !Audio) return;
   try {
     await Audio.setAudioModeAsync({
       allowsRecordingIOS:         false,
@@ -99,172 +119,60 @@ async function setAudioModeOnce(): Promise<void> {
       shouldDuckAndroid:          false,
       playThroughEarpieceAndroid: false,
     });
-    _audioModeSet = true;
-    console.log('[Sound] AudioMode set OK');
+    _audioModeOk = true;
+    console.log('[Sound] AudioMode OK');
   } catch (e) {
-    console.warn('[Sound] AudioMode error:', e);
-  }
-}
-
-async function getOrCreateWavUri(): Promise<string | null> {
-  if (_wavUri) {
-    // Verify it still exists
-    try {
-      if (FileSystem) {
-        const info = await FileSystem.getInfoAsync(_wavUri);
-        if (info.exists) return _wavUri;
-      }
-    } catch { /* regenerate */ }
-    _wavUri = null;
-  }
-
-  if (!FileSystem) return null;
-  try {
-    const wav  = generateBeepWav();
-    const b64  = uint8ToBase64(wav);
-    const path = `${FileSystem.documentDirectory}prostaff_v7.wav`;
-    await FileSystem.writeAsStringAsync(path, b64, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    _wavUri = path;
-    console.log('[Sound] WAV file created:', path);
-    return path;
-  } catch (e) {
-    console.warn('[Sound] WAV write failed:', e);
-    return null;
-  }
-}
-
-/**
- * Preload the sound so it's instantly ready when notification comes.
- * Called at app startup and after each play.
- */
-async function preloadSound(): Promise<void> {
-  if (!Audio || _isInitializing) return;
-  _isInitializing = true;
-  try {
-    await setAudioModeOnce();
-
-    // Unload old sound if any
-    if (_preloadedSound) {
-      try { await _preloadedSound.unloadAsync(); } catch { /* ignore */ }
-      _preloadedSound = null;
-    }
-
-    const uri = await getOrCreateWavUri();
-    if (!uri) {
-      console.warn('[Sound] No WAV URI — cannot preload');
-      return;
-    }
-
-    const { sound } = await Audio.Sound.createAsync(
-      { uri },
-      { shouldPlay: false, volume: 1.0, isLooping: false }
-    );
-    _preloadedSound = sound;
-    _initDone = true;
-    console.log('[Sound] Preload OK ✅');
-  } catch (e) {
-    console.warn('[Sound] Preload failed:', e);
-    _preloadedSound = null;
-  } finally {
-    _isInitializing = false;
-  }
-}
-
-/**
- * Play the preloaded sound. If not preloaded, load and play immediately.
- */
-async function playPreloadedSound(vol: number): Promise<boolean> {
-  if (!Audio) return false;
-  try {
-    // If preloaded — just replay from start
-    if (_preloadedSound) {
-      try {
-        await _preloadedSound.setVolumeAsync(Math.max(0.6, Math.min(1.0, vol)));
-        await _preloadedSound.setPositionAsync(0);
-        await _preloadedSound.playAsync();
-        console.log('[Sound] Played from preloaded sound ✅');
-        // Reload after 2s so it's ready for next notification
-        setTimeout(() => preloadSound(), 2000);
-        return true;
-      } catch (e) {
-        console.warn('[Sound] Preloaded play failed, reloading:', e);
-        _preloadedSound = null;
-      }
-    }
-
-    // Fallback: load and play fresh
-    console.log('[Sound] Preload not ready — loading fresh...');
-    await setAudioModeOnce();
-    const uri = await getOrCreateWavUri();
-    if (!uri) return false;
-
-    const { sound } = await Audio.Sound.createAsync(
-      { uri },
-      { shouldPlay: true, volume: Math.max(0.6, Math.min(1.0, vol)) }
-    );
-
-    sound.setOnPlaybackStatusUpdate((status: any) => {
-      if (status.didJustFinish) {
-        sound.unloadAsync().catch(() => {});
-        // Reload preload for next time
-        setTimeout(() => preloadSound(), 500);
-      }
-    });
-    console.log('[Sound] Played fresh ✅');
-    return true;
-  } catch (e) {
-    console.warn('[Sound] playPreloadedSound error:', e);
-    return false;
+    console.warn('[Sound] AudioMode err:', e);
   }
 }
 
 // ─── Notification channel ─────────────────────────────────────────────────────
-const CHANNEL_ID = 'prostaff-v7';
-let _channelReady = false;
-let _permGranted: boolean | null = null;
+const CH = 'prostaff-v8';
+let _chReady = false;
+let _permOk: boolean | null = null;
 
-async function ensureNotifPermission(): Promise<boolean> {
-  if (_permGranted !== null) return _permGranted;
+async function ensurePerm(): Promise<boolean> {
+  if (_permOk !== null) return _permOk;
   if (!Notifications) return false;
   try {
     const { status } = await Notifications.requestPermissionsAsync();
-    _permGranted = status === 'granted';
-    return _permGranted;
+    _permOk = status === 'granted';
+    console.log('[Sound] Notif perm:', _permOk);
+    return _permOk;
   } catch { return false; }
 }
 
 async function ensureChannel(): Promise<void> {
-  if (_channelReady || !Notifications || Platform.OS !== 'android') return;
+  if (_chReady || Platform.OS !== 'android' || !Notifications) return;
   try {
-    // Delete old channels
-    for (const id of [
+    // Remove old channels
+    const oldChannels = [
       'new-orders','new-orders-v2','new-orders-v3','new-orders-v4',
-      'prostaff-orders-v5','prostaff-orders-v6',
-    ]) {
-      try { await Notifications.deleteNotificationChannelAsync(id); } catch { /* ignore */ }
+      'prostaff-orders-v5','prostaff-orders-v6','prostaff-v7',
+    ];
+    for (const id of oldChannels) {
+      try { await Notifications.deleteNotificationChannelAsync(id); } catch { /* ok */ }
     }
-    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+    await Notifications.setNotificationChannelAsync(CH, {
       name:             'Yangi buyurtmalar',
-      importance:        Notifications.AndroidImportance?.MAX ?? 5,
+      importance:       Notifications.AndroidImportance?.MAX ?? 5,
       sound:            'default',
-      vibrationPattern: [0, 400, 200, 400],
+      vibrationPattern: [0, 500, 200, 500],
       enableVibrate:    true,
       enableLights:     true,
       lightColor:       '#FF6B35',
       bypassDnd:        true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility?.PUBLIC ?? 1,
     });
-    _channelReady = true;
-    console.log('[Sound] Channel v7 created ✅');
+    _chReady = true;
+    console.log('[Sound] Channel v8 OK');
   } catch (e) {
-    console.warn('[Sound] Channel error:', e);
+    console.warn('[Sound] Channel err:', e);
   }
 }
 
-// Foreground notification handler
-if (Notifications && Platform.OS !== 'web') {
+// Foreground notification handler — must be set before any notification fires
+if (Platform.OS !== 'web' && Notifications) {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert:  true,
@@ -276,54 +184,95 @@ if (Notifications && Platform.OS !== 'web') {
   });
 }
 
-// ─── Startup initialization ───────────────────────────────────────────────────
+// ─── Startup init ─────────────────────────────────────────────────────────────
 if (Platform.OS !== 'web') {
-  // Run after a short delay so app has time to mount
-  setTimeout(() => {
-    console.log('[Sound] Starting initialization...');
-    Promise.all([
-      preloadSound(),
-      ensureChannel(),
-      ensureNotifPermission(),
-    ]).then(() => {
-      console.log('[Sound] All initialized ✅');
-    }).catch((e) => {
-      console.warn('[Sound] Init error:', e);
-    });
-  }, 1000);
+  setTimeout(async () => {
+    try {
+      await Promise.all([ensureAudioMode(), ensureChannel(), ensurePerm()]);
+      await getWavPath(); // pre-write WAV file so it's ready
+      console.log('[Sound] Startup init done ✅');
+    } catch (e) {
+      console.warn('[Sound] Startup init err:', e);
+    }
+  }, 800);
 }
 
-// ─── Rate limit ───────────────────────────────────────────────────────────────
-let _lastPlayTime = 0;
-const MIN_INTERVAL_MS = 2000;
+// ─── Core play function ───────────────────────────────────────────────────────
+let _playing = false;
 
-// ─── Mobile main function ─────────────────────────────────────────────────────
-async function playMobileSound(vol: number, title: string, body: string): Promise<void> {
-  const now = Date.now();
-  if (now - _lastPlayTime < MIN_INTERVAL_MS) {
-    console.log('[Sound] Rate limited, skipping');
-    return;
+async function playOnMobile(vol: number, title: string, body: string): Promise<void> {
+  // Don't skip even if _playing — just log
+  if (_playing) {
+    console.log('[Sound] Already playing, but continuing anyway...');
   }
-  _lastPlayTime = now;
 
-  console.log('[Sound] playMobileSound called, preloadReady:', !!_preloadedSound);
+  console.log('[Sound] === playOnMobile START ===');
 
-  // 1. Vibration — always first, no permissions needed
+  // 1. Vibration — 100% reliable, no permissions
   try {
     Vibration.cancel();
-    Vibration.vibrate([0, 400, 200, 400, 200, 600]);
-    console.log('[Sound] Vibration OK');
+    Vibration.vibrate([0, 500, 150, 500, 150, 700]);
+    console.log('[Sound] Vibration fired');
   } catch (e) {
-    console.warn('[Sound] Vibration error:', e);
+    console.warn('[Sound] Vibration err:', e);
   }
 
-  // 2. expo-av (preloaded — instant playback)
-  const avOk = await playPreloadedSound(vol);
-  console.log('[Sound] expo-av result:', avOk);
-
-  // 3. expo-notifications (OS-level sound — works even if av fails)
+  // 2. expo-av — create fresh Sound each time (most reliable approach)
+  _playing = true;
+  let avSuccess = false;
   try {
-    const granted = await ensureNotifPermission();
+    await ensureAudioMode();
+    const wavPath = await getWavPath();
+    console.log('[Sound] WAV path:', wavPath);
+
+    if (wavPath && Audio) {
+      // Use file:// URI explicitly for Android
+      const uri = Platform.OS === 'android' && !wavPath.startsWith('file://')
+        ? 'file://' + wavPath
+        : wavPath;
+
+      const { sound } = await Audio.Sound.createAsync(
+        { uri },
+        {
+          shouldPlay:  true,
+          volume:      Math.max(0.7, Math.min(1.0, vol)),
+          isLooping:   false,
+          isMuted:     false,
+        }
+      );
+
+      console.log('[Sound] expo-av playAsync called ✅');
+      avSuccess = true;
+
+      // Auto-unload when done
+      sound.setOnPlaybackStatusUpdate((status: any) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync().catch(() => {});
+          _playing = false;
+          console.log('[Sound] expo-av done, unloaded');
+        }
+        if (status.error) {
+          console.warn('[Sound] Playback error:', status.error);
+          _playing = false;
+        }
+      });
+
+      // Safety timeout — release after 5s regardless
+      setTimeout(() => {
+        _playing = false;
+        try { sound.unloadAsync(); } catch { /* ok */ }
+      }, 5000);
+    }
+  } catch (e) {
+    console.warn('[Sound] expo-av error:', e);
+    _playing = false;
+  }
+
+  console.log('[Sound] expo-av success:', avSuccess);
+
+  // 3. expo-notifications — OS-level sound (works even if app is background/closed)
+  try {
+    const granted = await ensurePerm();
     if (granted && Notifications) {
       await ensureChannel();
       await Notifications.scheduleNotificationAsync({
@@ -332,102 +281,99 @@ async function playMobileSound(vol: number, title: string, body: string): Promis
           body,
           sound:    'default',
           priority: 'max',
-          data:     { ts: now },
-          ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+          data:     { type: 'new-order', ts: Date.now() },
+          ...(Platform.OS === 'android' ? { channelId: CH } : {}),
         },
         trigger: null,
       });
       console.log('[Sound] Notification scheduled ✅');
     }
   } catch (e) {
-    console.warn('[Sound] Notification error:', e);
+    console.warn('[Sound] Notification err:', e);
   }
+
+  console.log('[Sound] === playOnMobile END ===');
 }
 
-// ─── WEB: singleton AudioContext ──────────────────────────────────────────────
-let _webCtx: any = null;
+// ─── Web AudioContext ─────────────────────────────────────────────────────────
+let _webAudioCtx: any = null;
 
 function getWebCtx(): any {
   if (typeof window === 'undefined') return null;
-  const Cls = (window as any).AudioContext || (window as any).webkitAudioContext;
-  if (!Cls) return null;
-  if (!_webCtx) { try { _webCtx = new Cls(); } catch { return null; } }
-  return _webCtx;
+  const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+  if (!AC) return null;
+  if (!_webAudioCtx) {
+    try { _webAudioCtx = new AC(); } catch { return null; }
+  }
+  return _webAudioCtx;
 }
 
 export function unlockWebAudio(): void {
   const ctx = getWebCtx();
-  if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+  if (ctx?.state === 'suspended') ctx.resume().catch(() => {});
 }
 
-function playWebBeep(vol = 1.0): void {
+function webBeep(vol = 1.0): void {
   const ctx = getWebCtx();
   if (!ctx) return;
-
-  const go = () => {
-    const v = Math.max(0.3, Math.min(1.0, vol));
-    const t = ctx.currentTime;
-    const beep = (freq: number, start: number, dur: number, amp: number) => {
+  const play = () => {
+    const amp = Math.max(0.3, Math.min(1.0, vol));
+    const t   = ctx.currentTime;
+    const tone = (freq: number, start: number, dur: number) => {
       const osc  = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, start);
+      osc.frequency.value = freq;
       gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(amp, start + 0.015);
+      gain.gain.linearRampToValueAtTime(amp, start + 0.012);
       gain.gain.linearRampToValueAtTime(0, start + dur);
       osc.start(start);
-      osc.stop(start + dur);
+      osc.stop(start + dur + 0.01);
     };
-    beep(880,  t,        0.20, v);
-    beep(1100, t + 0.28, 0.20, v * 0.9);
-    beep(1320, t + 0.56, 0.24, v);
+    tone(880,  t,        0.22);
+    tone(1100, t + 0.30, 0.22);
+    tone(1320, t + 0.60, 0.26);
   };
-
   if (ctx.state === 'suspended') {
-    ctx.resume().then(go).catch(() => {});
+    ctx.resume().then(play).catch(() => {});
   } else {
-    go();
+    play();
   }
 }
 
 // ─── PUBLIC API ───────────────────────────────────────────────────────────────
+
 export async function playNotificationSound(
   volume = 1.0,
   title  = 'Yangi buyurtma! 🔔',
   body   = 'Sizga yangi buyurtma keldi'
 ): Promise<void> {
+  console.log('[Sound] playNotificationSound called, platform:', Platform.OS);
   if (Platform.OS === 'web') {
-    playWebBeep(volume);
+    webBeep(volume);
     return;
   }
-  await playMobileSound(volume, title, body);
+  await playOnMobile(volume, title, body);
 }
 
 export async function stopNotificationSound(): Promise<void> {
   if (Platform.OS !== 'web') {
-    try { Vibration.cancel(); } catch { /* ignore */ }
-    if (_preloadedSound) {
-      try { await _preloadedSound.stopAsync(); } catch { /* ignore */ }
-    }
+    try { Vibration.cancel(); } catch { /* ok */ }
+    _playing = false;
   }
 }
 
-/**
- * Call this from test button — also triggers preload if not done yet
- */
 export async function testAndPreloadSound(volume = 1.0): Promise<void> {
+  console.log('[Sound] testAndPreloadSound called');
   if (Platform.OS === 'web') {
     unlockWebAudio();
-    playWebBeep(volume);
+    webBeep(volume);
     return;
   }
-  // Ensure preload is done
-  if (!_initDone || !_preloadedSound) {
-    await preloadSound();
-    await ensureChannel();
-    await ensureNotifPermission();
-  }
-  await playMobileSound(volume, 'Test! 🔔', 'Ovoz ishlayapdi ✅');
+  // Re-initialize if needed
+  await Promise.all([ensureAudioMode(), ensureChannel(), ensurePerm()]);
+  await getWavPath();
+  await playOnMobile(volume, '🔔 Test ovozi', 'Ovoz ishlayapdi — buyurtma ovozi shunday chiqadi');
 }
