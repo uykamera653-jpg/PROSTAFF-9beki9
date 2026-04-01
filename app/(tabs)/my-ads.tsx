@@ -196,20 +196,40 @@ export default function MyAdsScreen() {
 
   const setupRealtimeSubscription = () => {
     if (!user?.id) return () => {};
-    const channelName = `customer-orders-${user.id}-${Date.now()}`;
+    const channelName = `customer-orders-rt-${user.id}-${Date.now()}`;
     const channel = supabase
       .channel(channelName)
       .on('postgres_changes', {
-        event: '*',
+        event: 'INSERT',
+        schema: 'public',
+        table: 'orders',
+        filter: `customer_id=eq.${user.id}`,
+      }, () => { loadOrders(); })
+      .on('postgres_changes', {
+        event: 'UPDATE',
         schema: 'public',
         table: 'orders',
         filter: `customer_id=eq.${user.id}`,
       }, (payload) => {
-        // Real-vaqt yangilanish: accepted_workers o'zgarganda darhol ko'rsatish
-        if (payload.eventType === 'UPDATE' && payload.new) {
-          setOrders(prev => prev.map(o => o.id === payload.new.id ? { ...o, ...payload.new } : o));
-        } else {
-          loadOrders();
+        // Real-vaqt: accepted_workers, status, worker_id o'zgarganda darhol yangilash
+        if (payload.new) {
+          setOrders(prev =>
+            prev.map(o =>
+              o.id === payload.new.id
+                ? { ...o, ...payload.new }
+                : o
+            )
+          );
+        }
+      })
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'orders',
+        filter: `customer_id=eq.${user.id}`,
+      }, (payload) => {
+        if (payload.old?.id) {
+          setOrders(prev => prev.filter(o => o.id !== payload.old.id));
         }
       })
       .subscribe();
@@ -324,17 +344,13 @@ export default function MyAdsScreen() {
     );
   };
 
-  // Customer confirms selected workers
+  // Customer confirms selected workers — order status → accepted
   const handleConfirmWorkers = async () => {
     if (!selectedOrderForWorker || selectedWorkerIds.length === 0) return;
 
     setConfirmingWorkers(true);
     try {
-      const allWorkerIds: string[] = Array.isArray(selectedOrderForWorker.accepted_workers)
-        ? selectedOrderForWorker.accepted_workers
-        : [];
-
-      // 1. Update order: set first selected as worker_id, status = accepted, accepted_workers = selected
+      // Update order: first selected becomes the main worker_id, status = accepted
       const { error: orderError } = await supabase
         .from('orders')
         .update({
@@ -346,22 +362,20 @@ export default function MyAdsScreen() {
 
       if (orderError) throw orderError;
 
-      // 2. Set selected workers offline (they are now assigned)
-      if (selectedWorkerIds.length > 0) {
-        await supabase
-          .from('workers')
-          .update({ is_online: false })
-          .in('id', selectedWorkerIds);
-      }
-
-      // 3. Unselected workers stay online — no change needed, they remain available
+      // Update local state immediately — no need to reload
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === selectedOrderForWorker.id
+            ? { ...o, status: 'accepted', worker_id: selectedWorkerIds[0], accepted_workers: selectedWorkerIds }
+            : o
+        )
+      );
 
       setShowWorkerSelectModal(false);
       setSelectedOrderForWorker(null);
       setSelectedWorkerIds([]);
-      loadOrders();
 
-      Alert.alert('Muvaffaqiyatli!', `${selectedWorkerIds.length} ta ishchi tanlandi. Ular siz bilan bog'lanadi.`);
+      Alert.alert('Muvaffaqiyatli!', `Ishchi tanlandi. U siz bilan bog'lanadi.`);
     } catch (error: any) {
       Alert.alert('Xatolik', error.message || "Ishchilarni tasdiqlashda xatolik");
     } finally {
@@ -487,6 +501,7 @@ export default function MyAdsScreen() {
 
           {/* Accepted workers banner - for worker orders with acceptances */}
           {item.status === 'pending' && isWorkerOrder && acceptedCount > 0 && (
+
             <TouchableOpacity
               onPress={(e) => {
                 e.stopPropagation?.();

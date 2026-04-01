@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,26 +7,27 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Linking,
-  Platform,
+  Animated,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useTheme } from '../hooks/useTheme';
-import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../hooks/useAuth';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { MapViewComponent } from '../components/feature/MapView';
 import { useAlert } from '../components/ui/WebAlert';
-import { spacing, typography, borderRadius } from '../constants/theme';
+import { spacing, typography, borderRadius, rs } from '../constants/theme';
 import { supabase } from '../lib/supabase';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 interface OrderDetail {
   id: string;
   customer_id: string;
   worker_id: string | null;
+  target_company_id: string | null;
   category_id: string;
   title: string;
   description: string;
@@ -38,6 +39,8 @@ interface OrderDetail {
   customer_phone: string | null;
   created_at: string;
   updated_at: string;
+  order_type: string;
+  accepted_workers: string[];
 }
 
 interface WorkerProfile {
@@ -46,6 +49,10 @@ interface WorkerProfile {
   phone: string;
   rating: number;
   completed_orders: number;
+  avatar_url?: string;
+  age?: number;
+  min_price?: number;
+  max_price?: number;
 }
 
 interface UserProfile {
@@ -59,7 +66,6 @@ export default function OrderDetailScreen() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { t } = useTranslation();
   const { user } = useAuth();
   const { showAlert, AlertComponent } = useAlert();
 
@@ -71,18 +77,34 @@ export default function OrderDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Highlight animation when order updates in real-time
+  const highlightAnim = useRef(new Animated.Value(0)).current;
+  const channelRef = useRef<RealtimeChannel | null>(null);
+
   useEffect(() => {
     if (orderId) {
       loadOrderDetails();
       setupRealtimeSubscription();
     }
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
   }, [orderId]);
+
+  const triggerHighlight = () => {
+    Animated.sequence([
+      Animated.timing(highlightAnim, { toValue: 1, duration: 300, useNativeDriver: false }),
+      Animated.timing(highlightAnim, { toValue: 0, duration: 700, useNativeDriver: false }),
+    ]).start();
+  };
 
   const loadOrderDetails = async () => {
     try {
       setLoading(true);
 
-      // Load order
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .select('*')
@@ -92,44 +114,39 @@ export default function OrderDetailScreen() {
       if (orderError) throw orderError;
       setOrder(orderData);
 
-      // Load customer profile
-      const { data: customerData, error: customerError } = await supabase
+      // Load customer
+      const { data: customerData } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('id', orderData.customer_id)
         .single();
+      if (customerData) setCustomer(customerData);
 
-      if (customerError) {
-        console.warn('Customer profile not found:', customerError);
-      } else {
-        setCustomer(customerData);
-      }
-
-      // Load worker profile if assigned
+      // Load worker if assigned
       if (orderData.worker_id) {
-        const { data: workerData, error: workerError } = await supabase
+        const { data: workerData } = await supabase
           .from('workers')
           .select('*')
           .eq('id', orderData.worker_id)
           .single();
-
-        if (workerError) {
-          console.warn('Worker profile not found:', workerError);
-        } else {
-          setWorker(workerData);
-        }
+        if (workerData) setWorker(workerData);
+      } else {
+        setWorker(null);
       }
     } catch (error: any) {
-      console.error('Failed to load order details:', error);
-      showAlert('Xatolik', 'Buyurtma ma\'lumotlarini yuklab bo\'lmadi');
+      showAlert('Xatolik', "Buyurtma ma'lumotlarini yuklab bo'lmadi");
     } finally {
       setLoading(false);
     }
   };
 
   const setupRealtimeSubscription = () => {
-    const subscription = supabase
-      .channel(`order-detail:${orderId}`)
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
+
+    channelRef.current = supabase
+      .channel(`order-detail-rt-${orderId}-${Date.now()}`)
       .on(
         'postgres_changes',
         {
@@ -138,41 +155,85 @@ export default function OrderDetailScreen() {
           table: 'orders',
           filter: `id=eq.${orderId}`,
         },
-        () => {
-          loadOrderDetails();
+        async (payload) => {
+          if (!payload.new) return;
+
+          const updated = payload.new as OrderDetail;
+
+          // Update order state immediately without reload
+          setOrder(prev => prev ? { ...prev, ...updated } : prev);
+
+          // If worker_id changed, load new worker info
+          if (updated.worker_id) {
+            const { data: workerData } = await supabase
+              .from('workers')
+              .select('*')
+              .eq('id', updated.worker_id)
+              .single();
+            if (workerData) {
+              setWorker(workerData);
+              triggerHighlight(); // Flash to alert the user
+            }
+          } else {
+            setWorker(null);
+          }
         }
       )
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(subscription);
-    };
   };
 
-  const handleAcceptOrder = async () => {
-    if (!user || !order) return;
+  // Customer: reject current worker and reset to pending
+  const handleRejectWorker = async () => {
+    if (!order || !user) return;
 
-    try {
-      setActionLoading(true);
+    showAlert(
+      'Ishchini bekor qilish',
+      "Bu ishchini rad etib, yangi ishchi qidirmoqchimisiz?",
+      [
+        { text: "Yo'q", style: 'cancel' },
+        {
+          text: 'Ha, yangi izla',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setActionLoading(true);
 
-      const { error } = await supabase
-        .from('orders')
-        .update({
-          status: 'accepted',
-          worker_id: user.id,
-        })
-        .eq('id', orderId);
+              // Get current rejected list to exclude this worker
+              const rejectedBy: string[] = [];
+              if (order.worker_id) rejectedBy.push(order.worker_id);
 
-      if (error) throw error;
+              const { error } = await supabase
+                .from('orders')
+                .update({
+                  status: 'pending',
+                  worker_id: null,
+                  accepted_workers: [],
+                  rejected_by: rejectedBy,
+                })
+                .eq('id', order.id)
+                .eq('customer_id', user.id);
 
-      showAlert('Muvaffaqiyatli!', 'Buyurtma qabul qilindi');
-      loadOrderDetails();
-    } catch (error: any) {
-      console.error('Failed to accept order:', error);
-      showAlert('Xatolik', error.message || 'Buyurtmani qabul qilishda xatolik');
-    } finally {
-      setActionLoading(false);
-    }
+              if (error) throw error;
+
+              // Reset local state immediately
+              setOrder(prev => prev ? {
+                ...prev,
+                status: 'pending',
+                worker_id: null,
+                accepted_workers: [],
+              } : prev);
+              setWorker(null);
+
+              showAlert('Bajarildi', "Buyurtma yana kutish holatiga qaytdi. Yangi ishchi qidiring.");
+            } catch (err: any) {
+              showAlert('Xatolik', err.message || 'Bekor qilishda xatolik');
+            } finally {
+              setActionLoading(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleCompleteOrder = async () => {
@@ -199,16 +260,13 @@ export default function OrderDetailScreen() {
         if (workerData) {
           await supabase
             .from('workers')
-            .update({
-              completed_orders: workerData.completed_orders + 1,
-            })
+            .update({ completed_orders: workerData.completed_orders + 1 })
             .eq('id', user.id);
         }
 
         showAlert('Muvaffaqiyatli!', 'Buyurtma bajarildi');
         loadOrderDetails();
       } catch (error: any) {
-        console.error('Failed to complete order:', error);
         showAlert('Xatolik', 'Buyurtmani yakunlashda xatolik');
       } finally {
         setActionLoading(false);
@@ -216,58 +274,37 @@ export default function OrderDetailScreen() {
     };
 
     showAlert('Tasdiqlash', 'Buyurtma bajarilganini tasdiqlaysizmi?', [
-      { text: 'Yo\'q', style: 'cancel' },
+      { text: "Yo'q", style: 'cancel' },
       { text: 'Ha', onPress: completeAction },
     ]);
   };
 
-  const handleCall = (phoneNumber: string) => {
-    Linking.openURL(`tel:${phoneNumber}`);
-  };
-
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending':
-        return theme.warning;
-      case 'accepted':
-        return theme.primary;
-      case 'in_progress':
-        return theme.info;
-      case 'completed':
-        return theme.success;
-      case 'cancelled':
-        return theme.error;
-      default:
-        return theme.textSecondary;
+      case 'pending':     return '#F59E0B';
+      case 'accepted':    return '#3B82F6';
+      case 'in_progress': return '#8B5CF6';
+      case 'completed':   return '#10B981';
+      case 'cancelled':   return '#EF4444';
+      default:            return '#6B7280';
     }
   };
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'pending':
-        return 'Kutilmoqda';
-      case 'accepted':
-        return 'Qabul qilindi';
-      case 'in_progress':
-        return 'Jarayonda';
-      case 'completed':
-        return 'Bajarildi';
-      case 'cancelled':
-        return 'Bekor qilindi';
-      default:
-        return status;
+      case 'pending':     return 'Kutilmoqda';
+      case 'accepted':    return 'Qabul qilindi';
+      case 'in_progress': return 'Jarayonda';
+      case 'completed':   return 'Bajarildi';
+      case 'cancelled':   return 'Bekor qilindi';
+      default:            return status;
     }
   };
 
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <View
-          style={[
-            styles.header,
-            { paddingTop: insets.top + spacing.md, backgroundColor: theme.surface },
-          ]}
-        >
+        <View style={[styles.header, { paddingTop: insets.top + spacing.md, backgroundColor: theme.surface }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={theme.text} />
           </TouchableOpacity>
@@ -276,9 +313,7 @@ export default function OrderDetailScreen() {
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.primary} />
-          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-            Yuklanmoqda...
-          </Text>
+          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Yuklanmoqda...</Text>
         </View>
       </View>
     );
@@ -288,7 +323,7 @@ export default function OrderDetailScreen() {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={64} color={theme.error} />
+          <Ionicons name="alert-circle" size={64} color="#EF4444" />
           <Text style={[styles.errorText, { color: theme.text }]}>Buyurtma topilmadi</Text>
           <Button title="Orqaga" onPress={() => router.back()} />
         </View>
@@ -297,18 +332,18 @@ export default function OrderDetailScreen() {
   }
 
   const isCustomer = user?.id === order.customer_id;
-  const isWorker = user?.id === order.worker_id;
-  const canAccept = order.status === 'pending' && !isCustomer;
+  const isWorker   = user?.id === order.worker_id;
   const canComplete = order.status === 'accepted' && isWorker;
+  const statusColor = getStatusColor(order.status);
+  const highlightColor = highlightAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['transparent', '#10B98125'],
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View
-        style={[
-          styles.header,
-          { paddingTop: insets.top + spacing.md, backgroundColor: theme.surface },
-        ]}
-      >
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + spacing.md, backgroundColor: theme.surface }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
@@ -325,20 +360,16 @@ export default function OrderDetailScreen() {
         <Card>
           <View style={styles.statusContainer}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Holat</Text>
-            <View
-              style={[
-                styles.statusBadge,
-                { backgroundColor: getStatusColor(order.status) + '15' },
-              ]}
-            >
-              <Text style={[styles.statusText, { color: getStatusColor(order.status) }]}>
+            <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+              <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+              <Text style={[styles.statusText, { color: statusColor }]}>
                 {getStatusText(order.status)}
               </Text>
             </View>
           </View>
         </Card>
 
-        {/* Category & Description */}
+        {/* Order info */}
         <Card>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Buyurtma</Text>
           <Text style={[styles.orderTitle, { color: theme.primary }]}>{order.title}</Text>
@@ -370,16 +401,121 @@ export default function OrderDetailScreen() {
         {order.latitude && order.longitude && (
           <Card>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Manzil</Text>
-            <MapViewComponent
-              latitude={order.latitude}
-              longitude={order.longitude}
-              address={order.location}
-              height={200}
-            />
+            <View style={styles.locationRow}>
+              <Ionicons name="location" size={16} color={theme.primary} />
+              <Text style={[styles.locationText, { color: theme.textSecondary }]} numberOfLines={2}>
+                {order.location || `${order.latitude.toFixed(5)}, ${order.longitude.toFixed(5)}`}
+              </Text>
+            </View>
+            <View style={{ marginTop: spacing.sm }}>
+              <MapViewComponent
+                latitude={order.latitude}
+                longitude={order.longitude}
+                address={order.location}
+                height={200}
+              />
+            </View>
           </Card>
         )}
 
-        {/* Customer Info (visible to worker) */}
+        {/* ── WORKER INFO CARD (customer only, auto-updates) ── */}
+        {isCustomer && (
+          <Animated.View style={{ backgroundColor: highlightColor, borderRadius: borderRadius.lg }}>
+            {order.status === 'accepted' && worker ? (
+              <Card>
+                {/* Header */}
+                <View style={styles.workerCardHeader}>
+                  <View style={styles.workerCardBadge}>
+                    <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                    <Text style={[styles.workerCardBadgeText, { color: '#10B981' }]}>Ishchi topildi!</Text>
+                  </View>
+                </View>
+
+                <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: spacing.md }]}>
+                  Ishchi ma'lumotlari
+                </Text>
+
+                <View style={styles.workerRow}>
+                  {/* Avatar */}
+                  {worker.avatar_url ? (
+                    <Image
+                      source={{ uri: worker.avatar_url }}
+                      style={styles.workerAvatar}
+                      contentFit="cover"
+                      transition={200}
+                    />
+                  ) : (
+                    <View style={[styles.workerAvatar, { backgroundColor: theme.primary + '20', alignItems: 'center', justifyContent: 'center' }]}>
+                      <Ionicons name="person" size={32} color={theme.primary} />
+                    </View>
+                  )}
+
+                  {/* Info */}
+                  <View style={styles.workerInfoCol}>
+                    <Text style={[styles.workerName, { color: theme.text }]}>{worker.full_name}</Text>
+                    {worker.age ? (
+                      <Text style={[styles.workerAge, { color: theme.textSecondary }]}>{worker.age} yosh</Text>
+                    ) : null}
+                    <View style={styles.workerMeta}>
+                      <Ionicons name="star" size={14} color="#F59E0B" />
+                      <Text style={[styles.workerRating, { color: theme.textSecondary }]}>
+                        {worker.rating.toFixed(1)} · {worker.completed_orders} ish bajarilgan
+                      </Text>
+                    </View>
+                    {worker.min_price && worker.max_price ? (
+                      <Text style={[styles.workerPrice, { color: theme.primary }]}>
+                        {worker.min_price.toLocaleString()}–{worker.max_price.toLocaleString()} so'm/kun
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+
+                {/* Call button */}
+                <TouchableOpacity
+                  style={[styles.callBtn, { backgroundColor: '#10B98115', borderColor: '#10B981' }]}
+                  onPress={() => Linking.openURL(`tel:${worker.phone}`)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="call" size={20} color="#10B981" />
+                  <Text style={[styles.callBtnText, { color: '#10B981' }]}>{worker.phone}</Text>
+                </TouchableOpacity>
+
+                {/* Reject worker button */}
+                <TouchableOpacity
+                  style={[styles.rejectWorkerBtn, { borderColor: '#EF4444', backgroundColor: '#EF444410' }]}
+                  onPress={handleRejectWorker}
+                  disabled={actionLoading}
+                  activeOpacity={0.8}
+                >
+                  {actionLoading ? (
+                    <ActivityIndicator size="small" color="#EF4444" />
+                  ) : (
+                    <>
+                      <Ionicons name="person-remove" size={18} color="#EF4444" />
+                      <Text style={[styles.rejectWorkerText, { color: '#EF4444' }]}>
+                        Ishchi yoqmadi — yangi ishchi izlash
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </Card>
+            ) : order.status === 'pending' ? (
+              <Card>
+                <View style={styles.waitingBox}>
+                  <ActivityIndicator size="small" color={theme.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.waitingTitle, { color: theme.text }]}>Ishchi kutilmoqda...</Text>
+                    <Text style={[styles.waitingSub, { color: theme.textSecondary }]}>
+                      Ishchi qabul qilgach bu yerda avtomatik ko'rinadi
+                    </Text>
+                  </View>
+                </View>
+              </Card>
+            ) : null}
+          </Animated.View>
+        )}
+
+        {/* Customer info (visible to assigned worker) */}
         {!isCustomer && order.status !== 'pending' && (
           <Card>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Mijoz ma'lumotlari</Text>
@@ -387,56 +523,20 @@ export default function OrderDetailScreen() {
               {customer && (
                 <View style={styles.contactRow}>
                   <Ionicons name="person" size={20} color={theme.primary} />
-                  <Text style={[styles.contactText, { color: theme.text }]}>
-                    {customer.name}
-                  </Text>
+                  <Text style={[styles.contactText, { color: theme.text }]}>{customer.name}</Text>
                 </View>
               )}
               {order.customer_phone && (
                 <TouchableOpacity
                   style={styles.contactRow}
-                  onPress={() => handleCall(order.customer_phone!)}
+                  onPress={() => Linking.openURL(`tel:${order.customer_phone}`)}
                 >
-                  <Ionicons name="call" size={20} color={theme.success} />
-                  <Text style={[styles.contactText, { color: theme.success, fontWeight: '600' }]}>
+                  <Ionicons name="call" size={20} color="#10B981" />
+                  <Text style={[styles.contactText, { color: '#10B981', fontWeight: '600' }]}>
                     {order.customer_phone}
                   </Text>
                 </TouchableOpacity>
               )}
-            </View>
-          </Card>
-        )}
-
-        {/* Worker Info (visible to customer) */}
-        {isCustomer && worker && order.status !== 'pending' && (
-          <Card>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Ishchi ma'lumotlari</Text>
-            <View style={styles.workerInfo}>
-              <View style={styles.workerHeader}>
-                <View style={[styles.workerAvatar, { backgroundColor: theme.primary }]}>
-                  <Text style={styles.avatarText}>
-                    {worker.full_name.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-                <View style={styles.workerDetails}>
-                  <Text style={[styles.workerName, { color: theme.text }]}>
-                    {worker.full_name}
-                  </Text>
-                  <View style={styles.workerStats}>
-                    <Ionicons name="star" size={14} color={theme.warning} />
-                    <Text style={[styles.workerRating, { color: theme.textSecondary }]}>
-                      {worker.rating.toFixed(1)} · {worker.completed_orders} buyurtma
-                    </Text>
-                  </View>
-                </View>
-              </View>
-              <TouchableOpacity
-                style={[styles.callButton, { backgroundColor: theme.success }]}
-                onPress={() => handleCall(worker.phone)}
-              >
-                <Ionicons name="call" size={20} color="#FFFFFF" />
-                <Text style={styles.callButtonText}>{worker.phone}</Text>
-              </TouchableOpacity>
             </View>
           </Card>
         )}
@@ -458,15 +558,7 @@ export default function OrderDetailScreen() {
           </View>
         </Card>
 
-        {/* Actions */}
-        {canAccept && (
-          <Button
-            title="Buyurtmani qabul qilish"
-            onPress={handleAcceptOrder}
-            loading={actionLoading}
-            style={styles.actionButton}
-          />
-        )}
+        {/* Worker: complete button */}
         {canComplete && (
           <Button
             title="Bajarildi deb belgilash"
@@ -485,9 +577,7 @@ export default function OrderDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -495,23 +585,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
   },
-  backButton: {
-    width: 40,
-  },
-  headerTitle: {
-    ...typography.h3,
-    flex: 1,
-    textAlign: 'center',
-  },
-  placeholder: {
-    width: 40,
-  },
-  content: {
-    flex: 1,
-  },
+  backButton: { width: 40 },
+  headerTitle: { ...typography.h3, flex: 1, textAlign: 'center' },
+  placeholder: { width: 40 },
+  content: { flex: 1 },
   scrollContent: {
     padding: spacing.lg,
     gap: spacing.md,
+    paddingBottom: spacing.xxl,
   },
   loadingContainer: {
     flex: 1,
@@ -519,9 +600,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.md,
   },
-  loadingText: {
-    ...typography.body,
-  },
+  loadingText: { ...typography.body },
   errorContainer: {
     flex: 1,
     alignItems: 'center',
@@ -529,118 +608,133 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     padding: spacing.xl,
   },
-  errorText: {
-    ...typography.h3,
-  },
-  sectionTitle: {
-    ...typography.h4,
-    marginBottom: spacing.sm,
-  },
+  errorText: { ...typography.h3 },
+  sectionTitle: { ...typography.h4, marginBottom: spacing.sm },
   statusContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rs(6),
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.md,
   },
-  statusText: {
-    ...typography.bodyMedium,
-    fontWeight: '600',
+  statusDot: {
+    width: rs(8),
+    height: rs(8),
+    borderRadius: rs(4),
   },
-  orderTitle: {
-    ...typography.h3,
-    marginBottom: spacing.sm,
-  },
-  description: {
-    ...typography.body,
-    lineHeight: 22,
-  },
-  imagesContainer: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
+  statusText: { ...typography.bodyMedium, fontWeight: '600' },
+  orderTitle: { ...typography.h3, marginBottom: spacing.sm },
+  description: { ...typography.body, lineHeight: 22 },
+  imagesContainer: { flexDirection: 'row', gap: spacing.sm },
   imageWrapper: {
     width: 200,
     height: 150,
     borderRadius: borderRadius.md,
     overflow: 'hidden',
   },
-  orderImage: {
-    width: '100%',
-    height: '100%',
+  orderImage: { width: '100%', height: '100%' },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
   },
-  contactInfo: {
-    gap: spacing.md,
+  locationText: { ...typography.body, flex: 1 },
+  // Worker card
+  workerCardHeader: {
+    marginBottom: spacing.sm,
   },
-  contactRow: {
+  workerCardBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
+    backgroundColor: '#10B98115',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: rs(4),
+    borderRadius: borderRadius.sm,
+    alignSelf: 'flex-start',
   },
-  contactText: {
-    ...typography.body,
+  workerCardBadgeText: {
+    ...typography.small,
+    fontWeight: '700',
   },
-  workerInfo: {
-    gap: spacing.md,
-  },
-  workerHeader: {
+  workerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: spacing.md,
+    marginBottom: spacing.md,
   },
   workerAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    flexShrink: 0,
   },
-  avatarText: {
-    ...typography.h3,
-    color: '#FFFFFF',
-  },
-  workerDetails: {
+  workerInfoCol: {
     flex: 1,
+    gap: rs(4),
   },
-  workerName: {
-    ...typography.bodyMedium,
-    fontWeight: '600',
-    marginBottom: spacing.xs / 2,
-  },
-  workerStats: {
+  workerName: { ...typography.bodyMedium, fontWeight: '700', fontSize: 17 },
+  workerAge: { ...typography.small },
+  workerMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs / 2,
+    gap: rs(4),
   },
-  workerRating: {
-    ...typography.small,
-  },
-  callButton: {
+  workerRating: { ...typography.small, fontWeight: '500' },
+  workerPrice: { ...typography.small, fontWeight: '600' },
+  callBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
     paddingVertical: spacing.md,
     borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+    marginBottom: spacing.sm,
+    minHeight: 48,
   },
-  callButtonText: {
-    ...typography.bodyMedium,
-    color: '#FFFFFF',
-    fontWeight: '600',
+  callBtnText: { ...typography.bodyMedium, fontWeight: '700' },
+  rejectWorkerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+    minHeight: 48,
   },
+  rejectWorkerText: { ...typography.bodyMedium, fontWeight: '600' },
+  // Waiting state
+  waitingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  waitingTitle: { ...typography.bodyMedium, fontWeight: '600' },
+  waitingSub: { ...typography.small, marginTop: rs(2) },
+  // Customer info
+  contactInfo: { gap: spacing.md },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  contactText: { ...typography.body },
   timestampRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     marginBottom: spacing.xs,
   },
-  timestampText: {
-    ...typography.caption,
-  },
-  actionButton: {
-    marginTop: spacing.sm,
-  },
+  timestampText: { ...typography.caption },
+  actionButton: { marginTop: spacing.sm },
 });
