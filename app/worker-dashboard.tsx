@@ -13,7 +13,7 @@ import {
   Vibration,
   Linking,
 } from 'react-native';
-import { playNotificationSound } from '../services/sound-service';
+import { playNotificationSound, testAndPreloadSound } from '../services/sound-service';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -740,7 +740,7 @@ export default function WorkerDashboardScreen() {
       {/* Test sound button */}
       <TouchableOpacity
         style={[styles.testSoundBtn, { backgroundColor: theme.primary + '15', borderColor: theme.primary }]}
-        onPress={() => { import('../services/sound-service').then(m => { m.unlockWebAudio(); m.playNotificationSound(notifSettings.volume ?? 1.0, 'Test!', 'Ovoz ishlayapdi ✅'); }); }}
+        onPress={() => { testAndPreloadSound(notifSettings.volume ?? 1.0); }}
         activeOpacity={0.8}
       >
         <Ionicons name="musical-notes" size={20} color={theme.primary} />

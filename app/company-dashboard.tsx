@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { playNotificationSound } from '../services/sound-service';
+import { playNotificationSound, testAndPreloadSound } from '../services/sound-service';
 import * as ImagePicker from 'expo-image-picker';
 import {
   View,
@@ -950,7 +950,7 @@ export default function CompanyDashboardScreen() {
               {/* Test sound button */}
               <TouchableOpacity
                 style={[styles.testSoundBtn, { backgroundColor: theme.primary + '15', borderColor: theme.primary }]}
-                onPress={() => { import('../services/sound-service').then(m => { m.unlockWebAudio(); m.playNotificationSound(notifSettings.volume ?? 1.0, 'Test!', 'Ovoz ishlayapdi ✅'); }); }}
+                onPress={() => { testAndPreloadSound(notifSettings.volume ?? 1.0); }}
                 activeOpacity={0.8}
               >
                 <Ionicons name="musical-notes" size={20} color={theme.primary} />
