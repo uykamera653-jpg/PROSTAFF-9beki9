@@ -31,7 +31,10 @@
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
         "CAMERA",
-        "INTERNET"
+        "INTERNET",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -63,8 +66,22 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Bu ilova lokatsiyangizni xaritada ko'rsatish uchun foydalanadi."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/logo.png",
+          "color": "#FF6B35",
+          "sounds": [],
+          "mode": "production"
+        }
       ]
     ],
+    "extra": {
+      "eas": {
+        "projectId": "onspace-app"
+      }
+    },
     "experiments": {
       "typedRoutes": true
     }
