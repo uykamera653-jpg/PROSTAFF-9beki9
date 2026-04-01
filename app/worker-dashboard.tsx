@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Vibration,
 } from 'react-native';
+import { playNotificationSound } from '../services/sound-service';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -296,13 +297,11 @@ export default function WorkerDashboardScreen() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'orders', filter: 'order_type=eq.worker' },
         (payload) => {
-          if (
-            payload.new?.status === 'pending' &&
-            notifSettings.enabled &&
-            notifSettings.vibration &&
-            notifSettings.new_orders
-          ) {
-            Vibration.vibrate([0, 400, 200, 400]);
+          if (payload.new?.status === 'pending' && notifSettings.enabled && notifSettings.new_orders) {
+            if (notifSettings.vibration) Vibration.vibrate([0, 400, 200, 400]);
+            if (notifSettings.sound !== false) {
+              playNotificationSound(notifSettings.volume ?? 1.0);
+            }
           }
           loadOrdersRef.current();
         }
