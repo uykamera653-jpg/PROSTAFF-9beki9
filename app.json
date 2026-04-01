@@ -36,7 +36,9 @@
         "RECEIVE_BOOT_COMPLETED",
         "POST_NOTIFICATIONS",
         "MODIFY_AUDIO_SETTINGS",
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "USE_FULL_SCREEN_INTENT",
+        "FOREGROUND_SERVICE"
       ]
     },
     "web": {
