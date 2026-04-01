@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Audio } from 'expo-av';
+import { playNotificationSound } from '../services/sound-service';
 import * as ImagePicker from 'expo-image-picker';
 import {
   View,
@@ -98,7 +98,7 @@ export default function CompanyDashboardScreen() {
   const [locationCoords, setLocationCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  // sound handled by sound-service
 
   // Check role and redirect if not company
   useEffect(() => {
@@ -125,10 +125,7 @@ export default function CompanyDashboardScreen() {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
-      if (soundRef.current) {
-        soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
+      // sound cleanup handled by sound-service
     };
   }, [profile, ordersTab]);
 
@@ -218,27 +215,9 @@ export default function CompanyDashboardScreen() {
     }
   };
 
-  const playNotificationSound = async () => {
+  const handleNotificationSound = async () => {
     if (!notifSettings.enabled || !notifSettings.sound || !notifSettings.new_orders) return;
-    try {
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-      }
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: 'https://cdn.freesound.org/previews/521/521975_1648170-lq.mp3' },
-        { shouldPlay: true, volume: notifSettings.volume ?? 1.0 }
-      );
-      soundRef.current = sound;
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync();
-          soundRef.current = null;
-        }
-      });
-    } catch (e) {
-      console.log('Sound play failed:', e);
-    }
+    await playNotificationSound(notifSettings.volume ?? 1.0);
   };
 
   const setupRealtime = () => {
@@ -253,7 +232,7 @@ export default function CompanyDashboardScreen() {
           if (notifSettings.enabled && notifSettings.vibration && notifSettings.new_orders) {
             Vibration.vibrate([0, 400, 200, 400]);
           }
-          await playNotificationSound();
+          await handleNotificationSound();
         }
         loadOrders();
       })
