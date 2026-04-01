@@ -13,7 +13,7 @@ import {
   Vibration,
   Linking,
 } from 'react-native';
-import { playNotificationSound, testAndPreloadSound } from '../services/sound-service';
+import { playNotificationSound, testAndPreloadSound, checkNotificationPermission, requestNotificationPermission } from '../services/sound-service';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -85,6 +85,10 @@ export default function WorkerDashboardScreen() {
   const [orderTimers, setOrderTimers] = useState<{ [orderId: string]: number }>({});
   // Cancelled order alert state
   const [cancelledOrder, setCancelledOrder] = useState<{ id: string; title: string } | null>(null);
+  // Permission states
+  const [notifPermStatus, setNotifPermStatus] = useState<'unknown' | 'granted' | 'denied'>('unknown');
+  const [locationPermStatus, setLocationPermStatus] = useState<'unknown' | 'granted' | 'denied'>('unknown');
+  const [gpsEnabled, setGpsEnabled] = useState<boolean | null>(null);
   const { showAlert, AlertComponent } = useAlert();
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const loadOrdersRef = useRef<() => void>(() => {});
@@ -119,8 +123,57 @@ export default function WorkerDashboardScreen() {
   useEffect(() => {
     if (user && !roleLoading && role === 'worker') {
       checkWorkerProfile();
+      checkPermissions();
     }
   }, [user, role, roleLoading]);
+
+  const checkPermissions = async () => {
+    // Bildirishnoma ruxsatini tekshirish
+    if (Platform.OS !== 'web') {
+      try {
+        const granted = await checkNotificationPermission();
+        setNotifPermStatus(granted ? 'granted' : 'denied');
+      } catch { /* ok */ }
+    }
+    // Lokatsiya ruxsatini tekshirish
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      setLocationPermStatus(status === 'granted' ? 'granted' : 'denied');
+      if (status === 'granted') {
+        const providerStatus = await Location.getProviderStatusAsync();
+        setGpsEnabled(providerStatus.locationServicesEnabled);
+      }
+    } catch { /* ok */ }
+  };
+
+  const handleRequestNotifPerm = async () => {
+    const granted = await requestNotificationPermission();
+    setNotifPermStatus(granted ? 'granted' : 'denied');
+    if (!granted) {
+      Linking.openSettings();
+    }
+  };
+
+  const handleRequestLocationPerm = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermStatus(status === 'granted' ? 'granted' : 'denied');
+      if (status !== 'granted') {
+        Linking.openSettings();
+        return;
+      }
+      const providerStatus = await Location.getProviderStatusAsync();
+      setGpsEnabled(providerStatus.locationServicesEnabled);
+    } catch { Linking.openSettings(); }
+  };
+
+  const handleOpenGps = () => {
+    if (Platform.OS === 'android') {
+      Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS').catch(() => Linking.openSettings());
+    } else {
+      Linking.openURL('App-Prefs:Privacy&path=LOCATION').catch(() => Linking.openSettings());
+    }
+  };
 
   // Keep loadOrdersRef always pointing to the latest loadOrders
   useEffect(() => {
@@ -370,38 +423,15 @@ export default function WorkerDashboardScreen() {
     try {
       // 1. Request permission
       const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermStatus(status === 'granted' ? 'granted' : 'denied');
       if (status !== 'granted') {
-        showAlert(
-          'Lokatsiya ruxsati yo\'q',
-          'Buyurtmalar olish uchun telefon sozlamalaridan lokatsiya ruxsatini bering.',
-          [
-            { text: 'Bekor qilish', style: 'cancel' },
-            { text: 'Ruxsat bering', onPress: () => Linking.openSettings() },
-          ]
-        );
         return;
       }
 
       // 2. Check if GPS / location services are enabled
       const providerStatus = await Location.getProviderStatusAsync();
+      setGpsEnabled(providerStatus.locationServicesEnabled);
       if (!providerStatus.locationServicesEnabled) {
-        showAlert(
-          'GPS yoqilmagan',
-          'Joylashuvni kuzatish uchun GPS xizmatini yoqing.',
-          [
-            { text: 'Bekor qilish', style: 'cancel' },
-            {
-              text: 'GPS yoqish',
-              onPress: () => {
-                if (Platform.OS === 'android') {
-                  Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS').catch(() => Linking.openSettings());
-                } else {
-                  Linking.openURL('App-Prefs:Privacy&path=LOCATION').catch(() => Linking.openSettings());
-                }
-              },
-            },
-          ]
-        );
         return;
       }
 
@@ -721,28 +751,78 @@ export default function WorkerDashboardScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Location Status */}
+      {/* Permission Banners */}
       <View style={styles.onlineContainer}>
-        {!workerLocation ? (
-          <Card style={[styles.warningCard, { backgroundColor: theme.warning + '15' }]}>
-            <View style={styles.warningRow}>
-              <Ionicons name="warning" size={24} color={theme.warning} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.warningTitle, { color: theme.warning }]}>
-                  Joylashuv belgilanmagan
-                </Text>
-                <Text style={[styles.warningText, { color: theme.textSecondary }]}>
-                  Buyurtmalar olish uchun joylashuvingizni belgilang
-                </Text>
-              </View>
-              <Button
-                title="Belgilash"
-                onPress={() => setShowLocationPicker(true)}
-                variant="outline"
-                style={{ paddingHorizontal: spacing.md }}
-              />
+        {/* Bildirishnoma ruxsati yo'q */}
+        {notifPermStatus === 'denied' && Platform.OS !== 'web' ? (
+          <TouchableOpacity
+            style={[styles.permBanner, { backgroundColor: '#EF444412', borderColor: '#EF4444' }]}
+            onPress={handleRequestNotifPerm}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="notifications-off" size={22} color="#EF4444" />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.permBannerTitle, { color: '#EF4444' }]}>Ovoz ruxsati yo'q</Text>
+              <Text style={[styles.permBannerSub, { color: theme.textSecondary }]}>Buyurtma ovozi uchun ruxsat bering</Text>
             </View>
-          </Card>
+            <View style={[styles.permBannerBtn, { backgroundColor: '#EF4444' }]}>
+              <Text style={styles.permBannerBtnText}>Ruxsat bering</Text>
+            </View>
+          </TouchableOpacity>
+        ) : null}
+
+        {/* Lokatsiya ruxsati yo'q */}
+        {locationPermStatus === 'denied' ? (
+          <TouchableOpacity
+            style={[styles.permBanner, { backgroundColor: '#F59E0B12', borderColor: '#F59E0B' }]}
+            onPress={handleRequestLocationPerm}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="location-outline" size={22} color="#F59E0B" />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.permBannerTitle, { color: '#F59E0B' }]}>Lokatsiya ruxsati yo'q</Text>
+              <Text style={[styles.permBannerSub, { color: theme.textSecondary }]}>Yaqin buyurtmalar uchun kerak</Text>
+            </View>
+            <View style={[styles.permBannerBtn, { backgroundColor: '#F59E0B' }]}>
+              <Text style={styles.permBannerBtnText}>Ruxsat bering</Text>
+            </View>
+          </TouchableOpacity>
+        ) : null}
+
+        {/* GPS o'chiq */}
+        {locationPermStatus === 'granted' && gpsEnabled === false ? (
+          <TouchableOpacity
+            style={[styles.permBanner, { backgroundColor: '#F59E0B12', borderColor: '#F59E0B' }]}
+            onPress={handleOpenGps}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="navigate-circle-outline" size={22} color="#F59E0B" />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.permBannerTitle, { color: '#F59E0B' }]}>GPS o'chiq</Text>
+              <Text style={[styles.permBannerSub, { color: theme.textSecondary }]}>Joylashuv uchun GPS ni yoqing</Text>
+            </View>
+            <View style={[styles.permBannerBtn, { backgroundColor: '#F59E0B' }]}>
+              <Text style={styles.permBannerBtnText}>GPS yoqish</Text>
+            </View>
+          </TouchableOpacity>
+        ) : null}
+
+        {/* Joylashuv belgilanmagan (ruxsat bor lekin location null) */}
+        {locationPermStatus === 'granted' && gpsEnabled !== false && !workerLocation ? (
+          <TouchableOpacity
+            style={[styles.permBanner, { backgroundColor: '#3B82F612', borderColor: '#3B82F6' }]}
+            onPress={() => setShowLocationPicker(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="map-outline" size={22} color="#3B82F6" />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.permBannerTitle, { color: '#3B82F6' }]}>Joylashuv belgilanmagan</Text>
+              <Text style={[styles.permBannerSub, { color: theme.textSecondary }]}>Yaqin buyurtmalar ko'rish uchun belgilang</Text>
+            </View>
+            <View style={[styles.permBannerBtn, { backgroundColor: '#3B82F6' }]}>
+              <Text style={styles.permBannerBtnText}>Belgilash</Text>
+            </View>
+          </TouchableOpacity>
         ) : null}
 
         <Card style={styles.onlineCard}>
@@ -1011,6 +1091,37 @@ export default function WorkerDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
+  permBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+    marginBottom: spacing.sm,
+  },
+  permBannerTitle: {
+    ...typography.bodyMedium,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  permBannerSub: {
+    ...typography.small,
+    marginTop: 2,
+  },
+  permBannerBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    minHeight: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  permBannerBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   testSoundBtn: {
     flexDirection: 'row',
     alignItems: 'center',

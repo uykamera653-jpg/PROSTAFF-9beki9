@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { playNotificationSound, testAndPreloadSound } from '../services/sound-service';
+import { playNotificationSound, testAndPreloadSound, checkNotificationPermission, requestNotificationPermission } from '../services/sound-service';
 import * as ImagePicker from 'expo-image-picker';
 import {
   View,
@@ -88,6 +88,7 @@ export default function CompanyDashboardScreen() {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [showImagePickerModal, setShowImagePickerModal] = useState(false);
+  const [notifPermStatus, setNotifPermStatus] = useState<'unknown' | 'granted' | 'denied'>('unknown');
 
   // Profile edit fields
   const [companyName, setCompanyName] = useState('');
@@ -111,6 +112,12 @@ export default function CompanyDashboardScreen() {
   useEffect(() => {
     if (user && !roleLoading && role === 'company') {
       loadProfile();
+      // Bildirishnoma ruxsatini tekshirish
+      if (Platform.OS !== 'web') {
+        checkNotificationPermission().then(granted => {
+          setNotifPermStatus(granted ? 'granted' : 'denied');
+        });
+      }
     }
   }, [user, role, roleLoading]);
 
@@ -625,6 +632,42 @@ export default function CompanyDashboardScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Bildirishnoma ruxsati yo'q banneri */}
+      {activeTab === 'orders' && notifPermStatus === 'denied' && Platform.OS !== 'web' ? (
+        <TouchableOpacity
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: spacing.sm,
+            margin: spacing.md,
+            marginBottom: 0,
+            padding: spacing.md,
+            borderRadius: borderRadius.md,
+            borderWidth: 1.5,
+            borderColor: '#EF4444',
+            backgroundColor: '#EF444412',
+          }}
+          onPress={async () => {
+            const granted = await requestNotificationPermission();
+            setNotifPermStatus(granted ? 'granted' : 'denied');
+            if (!granted) {
+              const { Linking } = require('react-native');
+              Linking.openSettings();
+            }
+          }}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="notifications-off" size={22} color="#EF4444" />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 14 }}>Ovoz ruxsati yo'q</Text>
+            <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>Buyurtma ovozi uchun ruxsat bering</Text>
+          </View>
+          <View style={{ backgroundColor: '#EF4444', paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: borderRadius.sm }}>
+            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Ruxsat bering</Text>
+          </View>
+        </TouchableOpacity>
+      ) : null}
 
       {/* ORDERS TAB */}
       {activeTab === 'orders' && (
