@@ -950,7 +950,7 @@ export default function CompanyDashboardScreen() {
               {/* Test sound button */}
               <TouchableOpacity
                 style={[styles.testSoundBtn, { backgroundColor: theme.primary + '15', borderColor: theme.primary }]}
-                onPress={() => playNotificationSound(notifSettings.volume ?? 1.0, 'Test!', 'Ovoz ishlayapdi ✅')}
+                onPress={() => { import('../services/sound-service').then(m => { m.unlockWebAudio(); m.playNotificationSound(notifSettings.volume ?? 1.0, 'Test!', 'Ovoz ishlayapdi ✅'); }); }}
                 activeOpacity={0.8}
               >
                 <Ionicons name="musical-notes" size={20} color={theme.primary} />

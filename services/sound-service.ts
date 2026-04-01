@@ -20,67 +20,69 @@ let _isPlayingTimeout: ReturnType<typeof setTimeout> | null = null;
 let _cachedWavUri: string | null = null;
 
 // ─── WEB: Web Audio API beep ──────────────────────────────────────────────────
+// Singleton AudioContext — bir marta user gesture da unlock qilinadi, keyin reuse
+let _webAudioCtx: any = null;
+
+function getWebAudioContext(): any {
+  if (typeof window === 'undefined') return null;
+  const AudioCtxClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+  if (!AudioCtxClass) return null;
+  if (!_webAudioCtx) {
+    try { _webAudioCtx = new AudioCtxClass(); } catch { return null; }
+  }
+  return _webAudioCtx;
+}
+
+// Unlock AudioContext (call on user gesture)
+export function unlockWebAudio(): void {
+  const ctx = getWebAudioContext();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') {
+    ctx.resume().then(() => {
+      console.log('[SoundService] AudioContext unlocked ✅');
+    }).catch(() => {});
+  }
+}
+
 function playWebBeep(volume = 1.0): void {
   if (typeof window === 'undefined') return;
   try {
-    const AudioCtxClass =
-      (window as any).AudioContext ||
-      (window as any).webkitAudioContext;
-    if (!AudioCtxClass) return;
+    const ctx = getWebAudioContext();
+    if (!ctx) return;
 
-    const ctx = new AudioCtxClass();
+    // Resume if suspended
+    const playBeep = () => {
+      const safeVol = Math.max(0.3, Math.min(1.0, volume));
+      const now = ctx.currentTime;
 
-    // Resume if suspended (browser policy requires user gesture first time)
+      const makeBeep = (freq: number, startTime: number, dur: number, vol: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, startTime);
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(vol, startTime + 0.02);
+        gain.gain.linearRampToValueAtTime(0, startTime + dur);
+        osc.start(startTime);
+        osc.stop(startTime + dur);
+      };
+
+      makeBeep(880, now, 0.25, safeVol);
+      makeBeep(660, now + 0.3, 0.25, safeVol * 0.8);
+      makeBeep(1100, now + 0.65, 0.3, safeVol);
+      console.log('[SoundService] Web Audio beep played ✅');
+    };
+
     if (ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
+      ctx.resume().then(playBeep).catch((e: any) => {
+        console.warn('[SoundService] AudioContext resume failed (no gesture yet):', e);
+      });
+    } else {
+      playBeep();
     }
 
-    const safeVol = Math.max(0.3, Math.min(1.0, volume));
-    const now = ctx.currentTime;
-
-    // --- Beep 1: 880 Hz ---
-    const osc1 = ctx.createOscillator();
-    const gain1 = ctx.createGain();
-    osc1.connect(gain1);
-    gain1.connect(ctx.destination);
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(880, now);
-    gain1.gain.setValueAtTime(0, now);
-    gain1.gain.linearRampToValueAtTime(safeVol, now + 0.02);
-    gain1.gain.linearRampToValueAtTime(0, now + 0.25);
-    osc1.start(now);
-    osc1.stop(now + 0.25);
-
-    // --- Beep 2: 660 Hz (after 0.3s) ---
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.connect(gain2);
-    gain2.connect(ctx.destination);
-    osc2.type = 'sine';
-    osc2.frequency.setValueAtTime(660, now + 0.3);
-    gain2.gain.setValueAtTime(0, now + 0.3);
-    gain2.gain.linearRampToValueAtTime(safeVol * 0.8, now + 0.32);
-    gain2.gain.linearRampToValueAtTime(0, now + 0.55);
-    osc2.start(now + 0.3);
-    osc2.stop(now + 0.55);
-
-    // --- Beep 3: 1100 Hz (after 0.65s) ---
-    const osc3 = ctx.createOscillator();
-    const gain3 = ctx.createGain();
-    osc3.connect(gain3);
-    gain3.connect(ctx.destination);
-    osc3.type = 'sine';
-    osc3.frequency.setValueAtTime(1100, now + 0.65);
-    gain3.gain.setValueAtTime(0, now + 0.65);
-    gain3.gain.linearRampToValueAtTime(safeVol, now + 0.67);
-    gain3.gain.linearRampToValueAtTime(0, now + 0.95);
-    osc3.start(now + 0.65);
-    osc3.stop(now + 0.95);
-
-    // close context after done
-    setTimeout(() => { ctx.close().catch(() => {}); }, 1200);
-
-    console.log('[SoundService] Web Audio beep played ✅');
   } catch (e) {
     console.warn('[SoundService] Web Audio failed:', e);
   }
