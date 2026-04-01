@@ -63,39 +63,58 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
     try {
       setIsLoading(true);
 
+      // 1. Check permission
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Prostaff', 'Lokatsiya ruxsati berilmadi. Telefon sozlamalaridan ruxsat bering.');
+        Alert.alert(
+          'Prostaff',
+          'Lokatsiya ruxsati berilmadi. Telefon sozlamalaridan ruxsat bering.',
+          [{ text: 'OK' }]
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. Check if location services (GPS) are enabled
+      const providerStatus = await Location.getProviderStatusAsync();
+      if (!providerStatus.locationServicesEnabled) {
+        Alert.alert(
+          'GPS yoqilmagan',
+          "Telefon sozlamalaridan GPS / joylashuv xizmatini yoqing, so'ng qayta urinib ko'ring.",
+          [{ text: 'OK' }]
+        );
         setIsLoading(false);
         return;
       }
 
       let coords: { latitude: number; longitude: number } | null = null;
 
-      // 1. Try last known position first (fast)
+      // 3. Try last known position first (instant)
       try {
         const last = await Location.getLastKnownPositionAsync();
         if (last) {
           coords = { latitude: last.coords.latitude, longitude: last.coords.longitude };
+          // Show immediately while fresh position loads
+          setSelectedLocation(coords);
+          moveMapTo(coords.latitude, coords.longitude);
         }
       } catch { /* ignore */ }
 
-      // 2. Get fresh position with timeout fallback
-      if (!coords) {
+      // 4. Get fresh position with timeout fallback
+      try {
+        const loc = await Promise.race([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 12000)),
+        ]) as Location.LocationObject;
+        coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+      } catch {
+        // 5. Lowest accuracy fallback
         try {
-          const loc = await Promise.race([
-            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }),
-            new Promise<null>((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)),
-          ]) as Location.LocationObject;
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Lowest });
           coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-        } catch {
-          // 3. Try lowest accuracy as final fallback
-          try {
-            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Lowest });
-            coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-          } catch (e2) {
-            console.error('Location fallback failed:', e2);
-            Alert.alert('Xatolik', 'Joylashuv aniqlanmadi. Telefon GPS ni yoqib, qayta urining.');
+        } catch (e2) {
+          if (!coords) {
+            Alert.alert('Xatolik', 'Joylashuv aniqlanmadi. GPS ni yoqib, ochiq joyda qayta urining.');
           }
         }
       }
@@ -107,6 +126,7 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
       }
     } catch (e) {
       console.error('Location error:', e);
+      Alert.alert('Xatolik', 'Joylashuv aniqlanmadi.');
     } finally {
       setIsLoading(false);
     }

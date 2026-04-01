@@ -333,29 +333,49 @@ export default function WorkerDashboardScreen() {
   const startLocationTracking = async () => {
     if (!user?.id) return;
     try {
+      // 1. Request permission
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         showAlert('Ruxsat kerak', 'Joylashuvni kuzatish uchun sozlamalardan lokatsiya ruxsatini bering');
         return;
       }
 
-      // Try last known position first for immediate update
+      // 2. Check if GPS / location services are enabled
+      const providerStatus = await Location.getProviderStatusAsync();
+      if (!providerStatus.locationServicesEnabled) {
+        showAlert(
+          'GPS yoqilmagan',
+          "Telefon sozlamalaridan GPS / joylashuv xizmatini yoqing, so'ng onlayn tugmasini qayta bosing."
+        );
+        return;
+      }
+
+      // 3. Immediate update from last known position
       try {
         const last = await Location.getLastKnownPositionAsync();
         if (last) {
           const { latitude, longitude } = last.coords;
           setWorkerLocation({ latitude, longitude });
-          await supabase.from('workers').update({ latitude, longitude, location_updated_at: new Date().toISOString() }).eq('id', user.id);
+          await supabase
+            .from('workers')
+            .update({ latitude, longitude, location_updated_at: new Date().toISOString() })
+            .eq('id', user.id);
         }
       } catch { /* ignore */ }
 
+      // 4. Remove old subscription
       if (locationSubscriptionRef.current) locationSubscriptionRef.current.remove();
+
+      // 5. Start watching position
       locationSubscriptionRef.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Low, distanceInterval: 50, timeInterval: 30000 },
+        { accuracy: Location.Accuracy.Balanced, distanceInterval: 30, timeInterval: 20000 },
         async (location) => {
           const { latitude, longitude } = location.coords;
           setWorkerLocation({ latitude, longitude });
-          await supabase.from('workers').update({ latitude, longitude, location_updated_at: new Date().toISOString() }).eq('id', user.id);
+          await supabase
+            .from('workers')
+            .update({ latitude, longitude, location_updated_at: new Date().toISOString() })
+            .eq('id', user.id);
         }
       );
     } catch (e) {

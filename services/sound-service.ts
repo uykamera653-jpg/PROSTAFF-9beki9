@@ -21,17 +21,38 @@ const SOUND_URLS = [
 ];
 
 // ─── PRIMARY: OS-level local notification (guaranteed sound on device) ────────
+// Android: channelId='new-orders' → bypassDnd:true → ovoz jim/tebranish rejimida ham chiqadi
 async function playViaLocalNotification(title: string, body: string): Promise<boolean> {
   if (!Notifications || Platform.OS === 'web') return false;
   try {
+    // Ensure channel exists before firing (Android)
+    if (Platform.OS === 'android') {
+      try {
+        await Notifications.setNotificationChannelAsync('new-orders', {
+          name: 'Yangi buyurtmalar',
+          importance: Notifications.AndroidImportance?.MAX ?? 5,
+          vibrationPattern: [0, 400, 200, 400],
+          sound: 'default',
+          enableVibrate: true,
+          showBadge: true,
+          bypassDnd: true,           // ← jim rejimida ham ovoz!
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility?.PUBLIC ?? 1,
+        });
+      } catch { /* ignore */ }
+    }
+
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
-        sound: true,
+        sound: true,               // iOS + Android default sound
         priority: 'max',
         vibrate: [0, 400, 200, 400],
         data: { type: 'new_order' },
+        // Android: explicitly route to bypassDnd channel
+        ...(Platform.OS === 'android'
+          ? { channelId: 'new-orders' }
+          : {}),
       },
       trigger: null, // fire immediately
     });
