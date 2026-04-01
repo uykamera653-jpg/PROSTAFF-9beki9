@@ -403,8 +403,12 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl,
     justifyContent: 'center',
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
   },
   header: {
     alignItems: 'center',
@@ -412,7 +416,6 @@ const styles = StyleSheet.create({
   },
   logo: {
     ...typography.h1,
-    fontSize: 48,
     fontWeight: '700',
     marginBottom: spacing.md,
   },

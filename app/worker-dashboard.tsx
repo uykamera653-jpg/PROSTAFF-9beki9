@@ -27,7 +27,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useAlert } from '../components/ui/WebAlert';
 import { LocationPicker } from '../components/feature/LocationPicker';
-import { spacing, typography, borderRadius } from '../constants/theme';
+import { spacing, typography, borderRadius, rs, rf } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 
 type OrderStatus = 'pending' | 'accepted' | 'in_progress' | 'completed';
@@ -827,9 +827,9 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   onlineDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: rs(10),
+    height: rs(10),
+    borderRadius: rs(5),
   },
   onlineText: {
     ...typography.bodyMedium,
@@ -953,10 +953,10 @@ const styles = StyleSheet.create({
   distanceBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs / 2,
+    gap: rs(3),
     alignSelf: 'flex-start',
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs / 2,
+    paddingVertical: rs(3),
     borderRadius: borderRadius.sm,
     marginBottom: spacing.sm,
   },
@@ -983,10 +983,10 @@ const styles = StyleSheet.create({
   timerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs / 2,
+    gap: rs(3),
     alignSelf: 'flex-start',
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs / 2,
+    paddingVertical: rs(3),
     borderRadius: borderRadius.sm,
     marginBottom: spacing.sm,
   },

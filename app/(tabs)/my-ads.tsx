@@ -24,7 +24,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useReviews } from '../../hooks/useReviews';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { spacing, typography, borderRadius } from '../../constants/theme';
+import { spacing, typography, borderRadius, rs } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 
 type OrderStatus = 'pending' | 'accepted' | 'in_progress' | 'completed' | 'cancelled';
@@ -865,7 +865,7 @@ const styles = StyleSheet.create({
   },
   title: { ...typography.h2 },
   tabsWrapper: {
-    height: 52,
+    height: rs(52),
     marginBottom: spacing.xs,
   },
   tabsContent: {
@@ -875,15 +875,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   tabChip: {
-    paddingHorizontal: 14,
-    height: 34,
-    borderRadius: 17,
+    paddingHorizontal: rs(14),
+    height: rs(36),
+    borderRadius: rs(18),
     borderWidth: 1.5,
     justifyContent: 'center',
     alignItems: 'center',
+    minWidth: rs(80),
   },
   tabChipText: {
-    fontSize: 13,
+    fontSize: rs(13),
     fontWeight: '600',
   },
   list: {
@@ -921,23 +922,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   deleteBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 7,
+    width: rs(32),
+    height: rs(32),
+    borderRadius: rs(8),
     alignItems: 'center',
     justifyContent: 'center',
   },
   cancelBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 7,
-    height: 28,
-    borderRadius: 7,
+    gap: rs(3),
+    paddingHorizontal: rs(8),
+    height: rs(32),
+    borderRadius: rs(8),
     borderWidth: 1,
   },
   cancelBtnText: {
-    fontSize: 11,
+    fontSize: rs(11),
     fontWeight: '600',
   },
   description: {

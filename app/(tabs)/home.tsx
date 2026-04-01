@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,11 +8,19 @@ import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
 import { useAuth } from '../../hooks/useAuth';
 import { useUserRole } from '../../hooks/useUserRole';
-import { spacing, typography, borderRadius, shadows } from '../../constants/theme';
-
-const cardWidth = Math.min(Dimensions.get('window').width - spacing.xl * 2, 500);
+import { spacing, typography, borderRadius, rs, rf } from '../../constants/theme';
 
 export default function HomeScreen() {
+  const [cardWidth, setCardWidth] = useState(
+    Math.min(Dimensions.get('window').width - spacing.xl * 2, 600)
+  );
+
+  useEffect(() => {
+    const sub = Dimensions.addEventListener('change', ({ window }) => {
+      setCardWidth(Math.min(window.width - spacing.xl * 2, 600));
+    });
+    return () => sub?.remove();
+  }, []);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
@@ -266,11 +274,11 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 140,
+    minHeight: rs(130),
   },
   cardIconContainer: {
-    width: 70,
-    height: 70,
+    width: rs(64),
+    height: rs(64),
     borderRadius: borderRadius.lg,
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
@@ -305,7 +313,6 @@ const styles = StyleSheet.create({
   },
   welcomeSubtext: {
     ...typography.h1,
-    fontSize: 28,
     fontWeight: '700',
   },
   loadingContainer: {

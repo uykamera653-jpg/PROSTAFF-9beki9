@@ -28,7 +28,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { LocationPicker } from '../components/feature/LocationPicker';
 import { useAlert } from '../components/ui/WebAlert';
-import { spacing, typography, borderRadius } from '../constants/theme';
+import { spacing, typography, borderRadius, rs } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -1186,7 +1186,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { ...typography.h3, flex: 1, textAlign: 'center' },
   onlineIndicatorBox: { width: 40, alignItems: 'flex-end' },
-  onlineDot: { width: 10, height: 10, borderRadius: 5 },
+  onlineDot: { width: rs(10), height: rs(10), borderRadius: rs(5) },
   tabsRow: {
     flexDirection: 'row',
     borderBottomWidth: 1,
@@ -1236,7 +1236,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
-    paddingVertical: spacing.sm,
+    paddingVertical: rs(10),
+    minHeight: 44,
     borderRadius: borderRadius.md,
     borderWidth: 1.5,
   },

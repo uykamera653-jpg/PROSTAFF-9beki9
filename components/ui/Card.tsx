@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
+import { View, StyleSheet, ViewStyle, Platform } from 'react-native';
 import { useTheme } from '../../hooks/useTheme';
 import { spacing, borderRadius, shadows } from '../../constants/theme';
 
@@ -16,7 +16,8 @@ export function Card({ children, style }: CardProps) {
       style={[
         styles.card,
         { backgroundColor: theme.surface },
-        shadows.md,
+        Platform.OS === 'ios' ? shadows.md : undefined,
+        Platform.OS === 'android' ? { elevation: 3 } : undefined,
         style,
       ]}
     >
@@ -29,5 +30,12 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: borderRadius.lg,
     padding: spacing.md,
+    // Android border to separate cards on same-colored background
+    ...Platform.select({
+      android: {
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: 'rgba(0,0,0,0.07)',
+      },
+    }),
   },
 });
