@@ -19,6 +19,73 @@ let _isPlaying = false;
 let _isPlayingTimeout: ReturnType<typeof setTimeout> | null = null;
 let _cachedWavUri: string | null = null;
 
+// ─── WEB: Web Audio API beep ──────────────────────────────────────────────────
+function playWebBeep(volume = 1.0): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const AudioCtxClass =
+      (window as any).AudioContext ||
+      (window as any).webkitAudioContext;
+    if (!AudioCtxClass) return;
+
+    const ctx = new AudioCtxClass();
+
+    // Resume if suspended (browser policy requires user gesture first time)
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+
+    const safeVol = Math.max(0.3, Math.min(1.0, volume));
+    const now = ctx.currentTime;
+
+    // --- Beep 1: 880 Hz ---
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(880, now);
+    gain1.gain.setValueAtTime(0, now);
+    gain1.gain.linearRampToValueAtTime(safeVol, now + 0.02);
+    gain1.gain.linearRampToValueAtTime(0, now + 0.25);
+    osc1.start(now);
+    osc1.stop(now + 0.25);
+
+    // --- Beep 2: 660 Hz (after 0.3s) ---
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(660, now + 0.3);
+    gain2.gain.setValueAtTime(0, now + 0.3);
+    gain2.gain.linearRampToValueAtTime(safeVol * 0.8, now + 0.32);
+    gain2.gain.linearRampToValueAtTime(0, now + 0.55);
+    osc2.start(now + 0.3);
+    osc2.stop(now + 0.55);
+
+    // --- Beep 3: 1100 Hz (after 0.65s) ---
+    const osc3 = ctx.createOscillator();
+    const gain3 = ctx.createGain();
+    osc3.connect(gain3);
+    gain3.connect(ctx.destination);
+    osc3.type = 'sine';
+    osc3.frequency.setValueAtTime(1100, now + 0.65);
+    gain3.gain.setValueAtTime(0, now + 0.65);
+    gain3.gain.linearRampToValueAtTime(safeVol, now + 0.67);
+    gain3.gain.linearRampToValueAtTime(0, now + 0.95);
+    osc3.start(now + 0.65);
+    osc3.stop(now + 0.95);
+
+    // close context after done
+    setTimeout(() => { ctx.close().catch(() => {}); }, 1200);
+
+    console.log('[SoundService] Web Audio beep played ✅');
+  } catch (e) {
+    console.warn('[SoundService] Web Audio failed:', e);
+  }
+}
+
 // ─── WAV generator: kod ichida 880Hz beep ─────────────────────────────────────
 function generateBeepWavBase64(): string {
   const sampleRate = 8000;
@@ -30,35 +97,21 @@ function generateBeepWavBase64(): string {
 
   const buf = new Uint8Array(44 + numSamples);
 
-  // "RIFF"
   buf[0]=82; buf[1]=73; buf[2]=70; buf[3]=70;
-  // file size (little-endian)
   buf[4]=fileSize&255; buf[5]=(fileSize>>8)&255; buf[6]=(fileSize>>16)&255; buf[7]=(fileSize>>24)&255;
-  // "WAVE"
   buf[8]=87; buf[9]=65; buf[10]=86; buf[11]=69;
-  // "fmt "
   buf[12]=102; buf[13]=109; buf[14]=116; buf[15]=32;
-  // fmt chunk size = 16
   buf[16]=16; buf[17]=0; buf[18]=0; buf[19]=0;
-  // PCM = 1
   buf[20]=1; buf[21]=0;
-  // channels = 1 (mono)
   buf[22]=1; buf[23]=0;
-  // sample rate = 8000
   buf[24]=64; buf[25]=31; buf[26]=0; buf[27]=0;
-  // byte rate = 8000
   buf[28]=64; buf[29]=31; buf[30]=0; buf[31]=0;
-  // block align = 1
   buf[32]=1; buf[33]=0;
-  // bits per sample = 8
   buf[34]=8; buf[35]=0;
-  // "data"
   buf[36]=100; buf[37]=97; buf[38]=116; buf[39]=97;
-  // data size
   buf[40]=dataSize&255; buf[41]=(dataSize>>8)&255; buf[42]=(dataSize>>16)&255; buf[43]=(dataSize>>24)&255;
 
-  // 880Hz sine wave with fade-in/out to avoid clicks
-  const fadeSamples = Math.floor(sampleRate * 0.05); // 50ms fade
+  const fadeSamples = Math.floor(sampleRate * 0.05);
   for (let i = 0; i < numSamples; i++) {
     let amplitude = 110;
     if (i < fadeSamples) amplitude = Math.round(amplitude * (i / fadeSamples));
@@ -67,7 +120,6 @@ function generateBeepWavBase64(): string {
     buf[44 + i] = Math.max(0, Math.min(255, sample));
   }
 
-  // Convert Uint8Array → base64
   let binary = '';
   const chunkSize = 8192;
   for (let i = 0; i < buf.length; i += chunkSize) {
@@ -121,7 +173,6 @@ if (Platform.OS === 'android' && Notifications) {
   ensureAndroidChannel().catch(() => {});
 }
 
-// Pre-generate WAV file on module load
 if (Platform.OS !== 'web') {
   getBeepUri().catch(() => {});
 }
@@ -164,8 +215,9 @@ async function playViaLocalNotification(title: string, body: string): Promise<bo
   }
 }
 
-// ─── expo-av: play generated WAV ─────────────────────────────────────────────
+// ─── expo-av: play generated WAV (mobile only) ───────────────────────────────
 async function playViaAv(volume: number): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
   if (_isPlaying) resetPlayingState();
   try {
     _isPlaying = true;
@@ -186,7 +238,7 @@ async function playViaAv(volume: number): Promise<boolean> {
 
     const safeVol = Math.max(0.6, Math.min(1.0, volume));
 
-    // 1. Try generated local WAV (no internet needed)
+    // 1. Try generated local WAV
     const localUri = await getBeepUri();
     if (localUri) {
       try {
@@ -248,17 +300,20 @@ export async function playNotificationSound(
   title = 'Yangi buyurtma!',
   body = 'Sizga yangi buyurtma keldi'
 ): Promise<void> {
-  console.log('[SoundService] playNotificationSound called');
+  console.log('[SoundService] playNotificationSound called, platform:', Platform.OS);
 
-  // 1. Vibration — darhol
-  if (Platform.OS !== 'web') {
-    try {
-      Vibration.cancel();
-      Vibration.vibrate([0, 500, 200, 500, 200, 800]);
-    } catch { /* ignore */ }
+  if (Platform.OS === 'web') {
+    // Web: Web Audio API — hech narsa o'rnatish shart emas
+    playWebBeep(volume);
+    return;
   }
 
-  // 2 & 3 — parallel
+  // Mobile: Vibration + OS notification + expo-av
+  try {
+    Vibration.cancel();
+    Vibration.vibrate([0, 500, 200, 500, 200, 800]);
+  } catch { /* ignore */ }
+
   await Promise.allSettled([
     playViaLocalNotification(title, body),
     playViaAv(volume),
@@ -267,9 +322,11 @@ export async function playNotificationSound(
 
 export async function stopNotificationSound(): Promise<void> {
   resetPlayingState();
-  if (Platform.OS !== 'web') Vibration.cancel();
-  if (_sound) {
-    try { await _sound.stopAsync(); await _sound.unloadAsync(); } catch { /* ignore */ }
-    _sound = null;
+  if (Platform.OS !== 'web') {
+    Vibration.cancel();
+    if (_sound) {
+      try { await _sound.stopAsync(); await _sound.unloadAsync(); } catch { /* ignore */ }
+      _sound = null;
+    }
   }
 }
