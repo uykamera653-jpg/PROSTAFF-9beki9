@@ -46,6 +46,7 @@ interface WorkerOrder {
   customer_id: string;
   worker_id?: string;
   distance?: number;
+  customer_name?: string;
 }
 
 interface WorkerLocation {
@@ -217,6 +218,20 @@ export default function WorkerDashboardScreen() {
           const rejectedBy = Array.isArray(order.rejected_by) ? order.rejected_by : [];
           return !rejectedBy.includes(user.id);
         });
+      }
+
+      // Fetch customer profiles for accepted/in_progress orders
+      if (selectedTab !== 'pending' && filteredData.length > 0) {
+        const customerIds = [...new Set(filteredData.map(o => o.customer_id).filter(Boolean))];
+        if (customerIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('user_profiles')
+            .select('id, name')
+            .in('id', customerIds);
+          const profileMap: Record<string, string> = {};
+          (profiles || []).forEach((p: any) => { profileMap[p.id] = p.name; });
+          filteredData = filteredData.map(o => ({ ...o, customer_name: profileMap[o.customer_id] || '' }));
+        }
       }
       
       // Calculate distance for pending orders if worker location available
@@ -482,14 +497,26 @@ export default function WorkerDashboardScreen() {
                 {item.location}
               </Text>
             </View>
-            {/* Show customer phone only if order is accepted by this worker */}
-            {item.customer_phone && item.worker_id === user?.id && item.status !== 'pending' && (
-              <View style={styles.orderInfoItem}>
-                <Ionicons name="call" size={16} color={theme.success} />
-                <Text style={[styles.orderInfoText, { color: theme.success, fontWeight: '600' }]}>
-                  {item.customer_phone}
-                </Text>
-              </View>
+            {/* Show customer info only if order is accepted by this worker */}
+            {item.worker_id === user?.id && item.status !== 'pending' && (
+              <>
+                {item.customer_name ? (
+                  <View style={styles.orderInfoItem}>
+                    <Ionicons name="person" size={16} color={theme.primary} />
+                    <Text style={[styles.orderInfoText, { color: theme.primary, fontWeight: '600' }]}>
+                      {item.customer_name}
+                    </Text>
+                  </View>
+                ) : null}
+                {item.customer_phone ? (
+                  <View style={styles.orderInfoItem}>
+                    <Ionicons name="call" size={16} color={theme.success} />
+                    <Text style={[styles.orderInfoText, { color: theme.success, fontWeight: '600' }]}>
+                      {item.customer_phone}
+                    </Text>
+                  </View>
+                ) : null}
+              </>
             )}
           </View>
 
