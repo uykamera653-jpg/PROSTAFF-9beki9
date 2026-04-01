@@ -11,6 +11,7 @@ import {
   Alert,
   ActivityIndicator,
   Vibration,
+  Linking,
 } from 'react-native';
 import { playNotificationSound } from '../services/sound-service';
 import * as Location from 'expo-location';
@@ -336,7 +337,14 @@ export default function WorkerDashboardScreen() {
       // 1. Request permission
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        showAlert('Ruxsat kerak', 'Joylashuvni kuzatish uchun sozlamalardan lokatsiya ruxsatini bering');
+        showAlert(
+          'Lokatsiya ruxsati yo\'q',
+          'Buyurtmalar olish uchun telefon sozlamalaridan lokatsiya ruxsatini bering.',
+          [
+            { text: 'Bekor qilish', style: 'cancel' },
+            { text: 'Ruxsat bering', onPress: () => Linking.openSettings() },
+          ]
+        );
         return;
       }
 
@@ -345,7 +353,20 @@ export default function WorkerDashboardScreen() {
       if (!providerStatus.locationServicesEnabled) {
         showAlert(
           'GPS yoqilmagan',
-          "Telefon sozlamalaridan GPS / joylashuv xizmatini yoqing, so'ng onlayn tugmasini qayta bosing."
+          'Joylashuvni kuzatish uchun GPS xizmatini yoqing.',
+          [
+            { text: 'Bekor qilish', style: 'cancel' },
+            {
+              text: 'GPS yoqish',
+              onPress: () => {
+                if (Platform.OS === 'android') {
+                  Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS').catch(() => Linking.openSettings());
+                } else {
+                  Linking.openURL('App-Prefs:Privacy&path=LOCATION').catch(() => Linking.openSettings());
+                }
+              },
+            },
+          ]
         );
         return;
       }

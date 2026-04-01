@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Linking } from 'react-native';
 import { supabase } from '../lib/supabase';
 import Constants from 'expo-constants';
 
@@ -122,6 +122,10 @@ export function useNotifications(userId: string | null): UseNotificationsReturn 
       if (finalStatus !== 'granted') {
         setError('Push notification permission denied');
         setIsLoading(false);
+        // Sozlamalarga yo'naltirish
+        if (Platform.OS !== 'web') {
+          Linking.openSettings().catch(() => {});
+        }
         return null;
       }
 

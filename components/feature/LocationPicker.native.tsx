@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  Linking,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
@@ -67,9 +68,15 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert(
-          'Prostaff',
-          'Lokatsiya ruxsati berilmadi. Telefon sozlamalaridan ruxsat bering.',
-          [{ text: 'OK' }]
+          'Lokatsiya ruxsati yo\'q',
+          'Joylashuvni aniqlash uchun telefon sozlamalaridan ruxsat bering.',
+          [
+            { text: 'Bekor qilish', style: 'cancel' },
+            {
+              text: 'Ruxsat bering',
+              onPress: () => Linking.openSettings(),
+            },
+          ]
         );
         setIsLoading(false);
         return;
@@ -80,8 +87,20 @@ export function LocationPicker({ visible, onClose, onLocationSelect, initialLoca
       if (!providerStatus.locationServicesEnabled) {
         Alert.alert(
           'GPS yoqilmagan',
-          "Telefon sozlamalaridan GPS / joylashuv xizmatini yoqing, so'ng qayta urinib ko'ring.",
-          [{ text: 'OK' }]
+          "Joylashuvni aniqlash uchun GPS xizmatini yoqing.",
+          [
+            { text: 'Bekor qilish', style: 'cancel' },
+            {
+              text: 'GPS yoqish',
+              onPress: () => {
+                if (Platform.OS === 'android') {
+                  Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS').catch(() => Linking.openSettings());
+                } else {
+                  Linking.openURL('App-Prefs:Privacy&path=LOCATION').catch(() => Linking.openSettings());
+                }
+              },
+            },
+          ]
         );
         setIsLoading(false);
         return;
