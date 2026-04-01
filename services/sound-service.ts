@@ -1,92 +1,91 @@
 import { Audio } from 'expo-av';
 import { Platform } from 'react-native';
 
-// Multiple fallback URLs for reliability
+// Ishonchli CDN URL lar — birinchisi ishlamasa keyingisi urinadi
 const SOUND_URLS = [
   'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3',
   'https://assets.mixkit.co/active_storage/sfx/2309/2309-preview.mp3',
-  'https://cdn.pixabay.com/download/audio/2021/08/04/audio_0625c1539c.mp3',
+  'https://assets.mixkit.co/active_storage/sfx/1820/1820-preview.mp3',
+  'https://assets.mixkit.co/active_storage/sfx/2462/2462-preview.mp3',
 ];
 
 let _sound: Audio.Sound | null = null;
 let _isPlaying = false;
 
 /**
- * Play in-app notification sound using expo-av.
- * Tries multiple CDN URLs as fallback.
+ * In-app bildirishnoma ovozini chaladi (expo-av).
+ * MODIFY_AUDIO_SETTINGS ruxsati app.json da bo'lishi shart.
  */
 export async function playNotificationSound(volume = 1.0): Promise<void> {
-  if (_isPlaying) return; // Prevent overlapping sounds
+  if (_isPlaying) return;
 
   try {
     _isPlaying = true;
 
-    // Configure audio session for Android and iOS
+    // Audio session sozlash — bu MODIFY_AUDIO_SETTINGS talab qiladi Android da
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,
+      playsInSilentModeIOS: true,       // iOS silent modeda ham chaladi
       staysActiveInBackground: false,
-      shouldDuckAndroid: false,
-      playThroughEarpieceAndroid: false,
+      shouldDuckAndroid: false,          // boshqa ovozlarni pasaytirmaydi
+      playThroughEarpieceAndroid: false, // karnaydan chiqadi
     });
 
-    // Unload previous sound
+    // Oldingi soundni tozalash
     if (_sound) {
       try {
         await _sound.stopAsync();
         await _sound.unloadAsync();
-      } catch {
-        // ignore
-      }
+      } catch { /* ignore */ }
       _sound = null;
     }
 
-    // Try each URL until one works
+    const safeVolume = Math.max(0.1, Math.min(1.0, volume));
     let loaded = false;
+
     for (const url of SOUND_URLS) {
       try {
         const { sound } = await Audio.Sound.createAsync(
           { uri: url },
           {
             shouldPlay: true,
-            volume: Math.max(0, Math.min(1, volume)),
+            volume: safeVolume,
             isLooping: false,
+            progressUpdateIntervalMillis: 500,
           },
           (status) => {
             if (status.isLoaded && status.didJustFinish) {
               sound.unloadAsync().catch(() => {});
-              _sound = null;
+              if (_sound === sound) _sound = null;
               _isPlaying = false;
             }
           }
         );
         _sound = sound;
         loaded = true;
-        break; // Success — stop trying other URLs
+        break;
       } catch (urlErr) {
-        console.log(`[SoundService] URL failed (${url}):`, urlErr);
-        // Try next URL
+        // Keyingi URL ga o'tadi
+        continue;
       }
     }
 
     if (!loaded) {
-      console.warn('[SoundService] All sound URLs failed');
       _isPlaying = false;
     }
 
-    // Safety reset after 10 seconds
+    // 12 soniyadan so'ng majburiy reset (qo'shimcha xavfsizlik)
     setTimeout(() => {
       _isPlaying = false;
-    }, 10000);
+    }, 12000);
 
   } catch (e) {
-    console.log('[SoundService] playNotificationSound failed:', e);
     _isPlaying = false;
   }
 }
 
 /**
- * Stop and unload any active sound.
+ * Aktiv ovozni to'xtatadi va xotiradan bo'shatadi.
  */
 export async function stopNotificationSound(): Promise<void> {
   _isPlaying = false;
@@ -94,9 +93,7 @@ export async function stopNotificationSound(): Promise<void> {
     try {
       await _sound.stopAsync();
       await _sound.unloadAsync();
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
     _sound = null;
   }
 }

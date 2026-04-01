@@ -34,7 +34,9 @@
         "INTERNET",
         "VIBRATE",
         "RECEIVE_BOOT_COMPLETED",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "MODIFY_AUDIO_SETTINGS",
+        "RECORD_AUDIO"
       ]
     },
     "web": {
