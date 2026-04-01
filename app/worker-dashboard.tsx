@@ -100,10 +100,8 @@ export default function WorkerDashboardScreen() {
     return R * c;
   };
 
-  // Check role and redirect if not worker
   useEffect(() => {
     if (!roleLoading && role && role !== 'worker') {
-      console.log('⚠️ Access denied: User role is', role, 'not worker');
       router.replace(role === 'customer' ? '/(tabs)/home' : role === 'company' ? '/company-dashboard' : '/admin-panel');
     }
   }, [role, roleLoading]);
@@ -161,34 +159,18 @@ export default function WorkerDashboardScreen() {
   const checkWorkerProfile = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('workers')
-        .select('*')
-        .eq('id', user!.id)
-        .single();
-
+      const { data, error } = await supabase.from('workers').select('*').eq('id', user!.id).single();
       if (error) {
-        if (error.code === 'PGRST116') {
-          // Worker profile doesn't exist, redirect to onboarding
-          router.replace('/worker-onboarding');
-        } else {
-          console.error('Worker profile error:', error);
-          showAlert('Xatolik', 'Profil yuklanmadi');
-        }
+        if (error.code === 'PGRST116') router.replace('/worker-onboarding');
+        else showAlert('Xatolik', 'Profil yuklanmadi');
         return;
       }
-
       if (data) {
         setWorkerProfile(data);
         setIsOnline(data.is_online);
-        
-        // Load worker location
-        if (data.latitude && data.longitude) {
-          setWorkerLocation({ latitude: data.latitude, longitude: data.longitude });
-        }
+        if (data.latitude && data.longitude) setWorkerLocation({ latitude: data.latitude, longitude: data.longitude });
       }
-    } catch (error: any) {
-      console.error('Failed to check worker profile:', error);
+    } catch {
       showAlert('Xatolik', 'Profil yuklanmadi');
     } finally {
       setLoading(false);
@@ -196,31 +178,18 @@ export default function WorkerDashboardScreen() {
   };
 
   const loadOrders = async () => {
-    if (!user?.id) {
-      console.log('⚠️ No user ID, skipping load');
-      return;
-    }
-
+    if (!user?.id) return;
     try {
       setRefreshing(true);
-      console.log('🔄 Loading orders for tab:', selectedTab);
-
-      // Get worker categories
       const { data: workerCats, error: catsError } = await supabase
         .from('worker_categories')
         .select('category_id')
         .eq('worker_id', user.id);
 
-      if (catsError) {
-        console.error('❌ Categories error:', catsError);
-        throw catsError;
-      }
+      if (catsError) throw catsError;
 
       const categoryIds = workerCats?.map(c => c.category_id) || [];
-      console.log('📋 Worker categories:', categoryIds.length);
-
       if (categoryIds.length === 0) {
-        console.log('⚠️ No categories selected');
         setOrders([]);
         setRefreshing(false);
         return;
@@ -240,25 +209,14 @@ export default function WorkerDashboardScreen() {
 
       const { data, error } = await query.order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('❌ Orders query error:', error);
-        throw error;
-      }
-      
-      console.log('✅ Loaded orders (before filter):', data?.length || 0);
-      
-      // Filter out rejected orders for pending tab
+      if (error) throw error;
+
       let filteredData = data || [];
       if (selectedTab === 'pending' && data) {
         filteredData = data.filter(order => {
           const rejectedBy = Array.isArray(order.rejected_by) ? order.rejected_by : [];
-          const isRejected = rejectedBy.includes(user.id);
-          if (isRejected) {
-            console.log('🚫 Filtering out rejected order:', order.id);
-          }
-          return !isRejected;
+          return !rejectedBy.includes(user.id);
         });
-        console.log('✅ Filtered orders (after removing rejected):', filteredData.length);
       }
       
       // Calculate distance for pending orders if worker location available
@@ -287,121 +245,55 @@ export default function WorkerDashboardScreen() {
       }
       
       setOrders(processedOrders);
-    } catch (error: any) {
-      console.error('❌ Failed to load orders:', error);
-      // Don't show alert on web to avoid disrupting UX
-      if (error?.message) {
-        console.error('Error details:', error.message);
-      }
+    } catch {
+      // Silent
     } finally {
       setRefreshing(false);
     }
   };
 
   const setupRealtimeSubscription = () => {
-    if (!user?.id) {
-      console.log('⚠️ No user ID, skipping subscription');
-      return () => {};
-    }
-
-    console.log('📡 Setting up real-time subscription');
+    if (!user?.id) return () => {};
     const channel = supabase
       .channel('worker-orders-' + user.id)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'orders',
-        },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' },
         (payload) => {
-          console.log('📨 Real-time update:', payload);
-          // Vibrate on new order if enabled
           if (payload.eventType === 'INSERT' && payload.new?.status === 'pending' && notifSettings.enabled && notifSettings.vibration && notifSettings.new_orders) {
             Vibration.vibrate([0, 400, 200, 400]);
           }
           loadOrders();
         }
       )
-      .subscribe((status) => {
-        console.log('📡 Subscription status:', status);
-      });
-
-    return () => {
-      console.log('🔌 Cleaning up subscription');
-      supabase.removeChannel(channel);
-    };
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   };
 
   const startLocationTracking = async () => {
     if (!user?.id) return;
-
     try {
-      // Request location permissions
-      const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
-      
-      if (foregroundStatus !== 'granted') {
-        console.warn('⚠️ Location permission denied');
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
         showAlert('Ruxsat kerak', 'Joylashuvni kuzatish uchun ruxsat bering');
         return;
       }
-
-      // Stop existing tracking if any
-      if (locationSubscriptionRef.current) {
-        locationSubscriptionRef.current.remove();
-      }
-
-      console.log('📍 Starting location tracking...');
-
-      // Start tracking location
+      if (locationSubscriptionRef.current) locationSubscriptionRef.current.remove();
       locationSubscriptionRef.current = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.Balanced,
-          distanceInterval: 50, // Update every 50 meters
-          timeInterval: 30000, // Update every 30 seconds
-        },
+        { accuracy: Location.Accuracy.Balanced, distanceInterval: 50, timeInterval: 30000 },
         async (location) => {
           const { latitude, longitude } = location.coords;
-          console.log('📍 Location updated:', latitude.toFixed(6), longitude.toFixed(6));
-
-          // Update local state
           setWorkerLocation({ latitude, longitude });
-
-          // Update database
-          try {
-            const { error } = await supabase
-              .from('workers')
-              .update({
-                latitude,
-                longitude,
-                location_updated_at: new Date().toISOString(),
-              })
-              .eq('id', user.id);
-
-            if (error) {
-              console.error('❌ Failed to update location:', error);
-            } else {
-              console.log('✅ Location saved to database');
-            }
-          } catch (err) {
-            console.error('❌ Location update error:', err);
-          }
+          await supabase.from('workers').update({ latitude, longitude, location_updated_at: new Date().toISOString() }).eq('id', user.id);
         }
       );
-
-      console.log('✅ Location tracking started');
-    } catch (error: any) {
-      console.error('❌ Failed to start location tracking:', error);
+    } catch {
       showAlert('Xatolik', 'Joylashuvni kuzatish boshlanmadi');
     }
   };
 
   const stopLocationTracking = () => {
     if (locationSubscriptionRef.current) {
-      console.log('🛑 Stopping location tracking...');
       locationSubscriptionRef.current.remove();
       locationSubscriptionRef.current = null;
-      console.log('✅ Location tracking stopped');
     }
   };
 
@@ -432,51 +324,29 @@ export default function WorkerDashboardScreen() {
 
   const handleAcceptOrder = async (orderId: string) => {
     if (!user) return;
-
     try {
-      // Check current order state
       const { data: currentOrder, error: checkError } = await supabase
-        .from('orders')
-        .select('status, accepted_workers')
-        .eq('id', orderId)
-        .single();
-
+        .from('orders').select('status, accepted_workers').eq('id', orderId).single();
       if (checkError) throw checkError;
-
       if (currentOrder.status !== 'pending') {
         showAlert('Xatolik', 'Bu buyurtma endi mavjud emas');
         loadOrders();
         return;
       }
-
-      const existingAccepted: string[] = Array.isArray(currentOrder.accepted_workers)
-        ? currentOrder.accepted_workers
-        : [];
-
+      const existingAccepted: string[] = Array.isArray(currentOrder.accepted_workers) ? currentOrder.accepted_workers : [];
       if (existingAccepted.includes(user.id)) {
-        showAlert("Ma'lumot", "Siz allaqachon bu buyurtmani qabul qildingiz. Buyurtmachi tanlashini kuting.");
+        showAlert("Ma'lumot", "Siz allaqachon bu buyurtmani qabul qildingiz.");
         setOrders(prev => prev.filter(o => o.id !== orderId));
         return;
       }
-
-      // Add this worker to accepted_workers array (order stays pending)
-      const updatedAccepted = [...existingAccepted, user.id];
-
       const { error } = await supabase
-        .from('orders')
-        .update({ accepted_workers: updatedAccepted })
-        .eq('id', orderId)
-        .eq('status', 'pending');
-
+        .from('orders').update({ accepted_workers: [...existingAccepted, user.id] })
+        .eq('id', orderId).eq('status', 'pending');
       if (error) throw error;
-
-      // Immediately remove from pending list
       setOrders(prev => prev.filter(o => o.id !== orderId));
-      showAlert("Yuborildi!", "Qabul qildingiz. Buyurtmachi siz haqingizda xabardor bo'ladi va tanlasa bog'lanadi.");
-
+      showAlert("Yuborildi!", "Buyurtmachi siz haqingizda xabardor bo'ladi.");
       setTimeout(() => loadOrders(), 500);
     } catch (error: any) {
-      console.error('❌ Failed to accept order:', error);
       showAlert('Xatolik', error.message || 'Buyurtmani qabul qilishda xatolik');
       loadOrders();
     }
@@ -484,129 +354,57 @@ export default function WorkerDashboardScreen() {
 
   const handleRejectOrder = async (orderId: string, silent = false) => {
     if (!user) return;
-
     try {
-      // Add worker ID to rejected_by array
       const { data: order, error: fetchError } = await supabase
-        .from('orders')
-        .select('rejected_by, status')
-        .eq('id', orderId)
-        .single();
-
-      if (fetchError) {
-        console.error('❌ Failed to fetch order:', fetchError);
-        throw fetchError;
-      }
-
-      // If order is no longer pending, don't reject
+        .from('orders').select('rejected_by, status').eq('id', orderId).single();
+      if (fetchError) throw fetchError;
       if (order.status !== 'pending') {
-        console.log('⚠️ Order is no longer pending, skipping reject');
         setOrders(prev => prev.filter(o => o.id !== orderId));
         return;
       }
-
-      let rejectedBy: string[] = [];
-      
-      // Parse rejected_by safely
-      if (order?.rejected_by) {
-        if (Array.isArray(order.rejected_by)) {
-          rejectedBy = order.rejected_by;
-        } else {
-          console.warn('⚠️ rejected_by is not an array:', order.rejected_by);
-          rejectedBy = [];
-        }
-      }
-
-      // Add worker ID if not already rejected
-      if (!rejectedBy.includes(user.id)) {
-        rejectedBy.push(user.id);
-      } else {
-        console.log('⚠️ Already rejected this order');
+      const rejectedBy: string[] = Array.isArray(order.rejected_by) ? [...order.rejected_by] : [];
+      if (rejectedBy.includes(user.id)) {
         setOrders(prev => prev.filter(o => o.id !== orderId));
         return;
       }
-
+      rejectedBy.push(user.id);
       const { error: updateError } = await supabase
-        .from('orders')
-        .update({ rejected_by: rejectedBy })
-        .eq('id', orderId)
-        .eq('status', 'pending'); // Only update if still pending
-
-      if (updateError) {
-        console.error('❌ Failed to update rejected_by:', updateError);
-        throw updateError;
-      }
-
-      console.log('✅ Order rejected successfully');
-
-      // Immediately remove from list
+        .from('orders').update({ rejected_by: rejectedBy })
+        .eq('id', orderId).eq('status', 'pending');
+      if (updateError) throw updateError;
       setOrders(prev => prev.filter(o => o.id !== orderId));
-
-      if (!silent) {
-        showAlert('Rad etildi', 'Buyurtma rad etildi');
-      }
-      
-      // Reload orders to sync
+      if (!silent) showAlert('Rad etildi', 'Buyurtma rad etildi');
       setTimeout(() => loadOrders(), 500);
     } catch (error: any) {
-      console.error('❌ Failed to reject order:', error);
-      if (!silent) {
-        showAlert('Xatolik', error.message || 'Buyurtmani rad etishda xatolik');
-      }
-      loadOrders(); // Refresh on error
+      if (!silent) showAlert('Xatolik', error.message || 'Buyurtmani rad etishda xatolik');
+      loadOrders();
     }
   };
 
   const handleCompleteOrder = async (orderId: string) => {
     const completeAction = async () => {
       try {
-        const { error } = await supabase
-          .from('orders')
-          .update({ status: 'completed' })
-          .eq('id', orderId);
-
+        const { error } = await supabase.from('orders').update({ status: 'completed' }).eq('id', orderId);
         if (error) throw error;
-
-        // Update worker stats
         if (workerProfile) {
-          const { error: updateError } = await supabase
-            .from('workers')
-            .update({
-              completed_orders: workerProfile.completed_orders + 1,
-            })
-            .eq('id', user!.id);
-
-          if (updateError) console.error('Failed to update stats:', updateError);
+          await supabase.from('workers')
+            .update({ completed_orders: workerProfile.completed_orders + 1 }).eq('id', user!.id);
         }
-
         showAlert('Muvaffaqiyatli!', 'Buyurtma bajarildi');
         loadOrders();
         checkWorkerProfile();
-      } catch (error: any) {
-        console.error('Failed to complete order:', error);
+      } catch {
         showAlert('Xatolik', 'Buyurtmani yakunlashda xatolik');
       }
     };
-
-    showAlert(
-      'Tasdiqlash',
-      'Buyurtma bajarilganini tasdiqlaysizmi?',
-      [
-        { text: 'Yo\'q', style: 'cancel' },
-        { text: 'Ha', onPress: completeAction },
-      ]
-    );
+    showAlert('Tasdiqlash', 'Buyurtma bajarilganini tasdiqlaysizmi?', [
+      { text: "Yo'q", style: 'cancel' },
+      { text: 'Ha', onPress: completeAction },
+    ]);
   };
 
   const handleLogout = async () => {
-    try {
-      console.log('🔓 Logging out from worker dashboard...');
-      await signOut();
-      router.replace('/');
-    } catch (error) {
-      console.error('❌ Logout error:', error);
-      router.replace('/');
-    }
+    try { await signOut(); } catch { /* ignore */ } finally { router.replace('/'); }
   };
 
   if (loading || roleLoading) {

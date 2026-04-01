@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,15 +7,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../hooks/useTheme';
 import { useTranslation } from '../../hooks/useTranslation';
 import { useAuth } from '../../hooks/useAuth';
-import { useJobs } from '../../hooks/useJobs';
-import { useCompanies } from '../../hooks/useCompanies';
-import { useWorkers } from '../../hooks/useWorkers';
 import { useUserRole } from '../../hooks/useUserRole';
-import { Card } from '../../components/ui/Card';
 import { spacing, typography, borderRadius, shadows } from '../../constants/theme';
 
-const { width } = Dimensions.get('window');
-const cardWidth = Math.min(width - spacing.xl * 2, 500);
+const cardWidth = Math.min(Dimensions.get('window').width - spacing.xl * 2, 500);
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -30,17 +25,9 @@ export default function HomeScreen() {
 
   // Auto-redirect based on role
   useEffect(() => {
-    console.log('🔍 Role check:', { role, roleLoading, hasUser: !!user });
     if (!roleLoading && user) {
-      if (role === 'worker') {
-        console.log('✅ Redirecting to worker dashboard');
-        router.replace('/worker-dashboard');
-      } else if (role === 'company') {
-        console.log('✅ Redirecting to company dashboard');
-        router.replace('/company-dashboard');
-      } else {
-        console.log('ℹ️ Staying on home (role: ' + role + ')');
-      }
+      if (role === 'worker') router.replace('/worker-dashboard');
+      else if (role === 'company') router.replace('/company-dashboard');
     }
   }, [role, roleLoading, user]);
 
