@@ -947,6 +947,17 @@ export default function CompanyDashboardScreen() {
                 />
               </View>
 
+              {/* Test sound button */}
+              <TouchableOpacity
+                style={[styles.testSoundBtn, { backgroundColor: theme.primary + '15', borderColor: theme.primary }]}
+                onPress={() => playNotificationSound(notifSettings.volume ?? 1.0, 'Test!', 'Ovoz ishlayapdi ✅')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="musical-notes" size={20} color={theme.primary} />
+                <Text style={[styles.testSoundText, { color: theme.primary }]}>Ovozni test qilish</Text>
+                <Ionicons name="play-circle" size={20} color={theme.primary} />
+              </TouchableOpacity>
+
               {/* Order updates */}
               <View style={[styles.notifRow, { borderBottomColor: 'transparent' }]}>
                 <View style={styles.notifLeft}>
@@ -1337,6 +1348,24 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  testSoundBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+    minHeight: 48,
+  },
+  testSoundText: {
+    ...typography.bodyMedium,
+    fontWeight: '700',
+    flex: 1,
+    textAlign: 'center',
   },
   menuItem: {
     flexDirection: 'row',
