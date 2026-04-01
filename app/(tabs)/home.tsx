@@ -10,6 +10,16 @@ import { useAuth } from '../../hooks/useAuth';
 import { useUserRole } from '../../hooks/useUserRole';
 import { spacing, typography, borderRadius, rs, rf } from '../../constants/theme';
 
+const shadows = {
+  lg: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+};
+
 export default function HomeScreen() {
   const [cardWidth, setCardWidth] = useState(
     Math.min(Dimensions.get('window').width - spacing.xl * 2, 600)
@@ -303,7 +313,7 @@ const styles = StyleSheet.create({
   },
   welcomeSection: {
     width: '100%',
-    maxWidth: cardWidth,
+    maxWidth: 600,
     marginBottom: spacing.lg,
   },
   welcomeText: {
