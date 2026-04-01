@@ -84,6 +84,7 @@ export default function WorkerDashboardScreen() {
   const { showAlert, AlertComponent } = useAlert();
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const loadOrdersRef = useRef<() => void>(() => {});
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
   // Push notifications
   const { settings: notifSettings } = useNotificationSettings();
@@ -282,18 +283,33 @@ export default function WorkerDashboardScreen() {
 
   const setupRealtimeSubscription = () => {
     if (!user?.id) return () => {};
+
+    // Polling fallback: every 8 seconds to guarantee real-time feel
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    pollIntervalRef.current = setInterval(() => {
+      loadOrdersRef.current();
+    }, 8000);
+
     const channel = supabase
-      .channel('worker-orders-rt-' + user.id)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' },
+      .channel('worker-orders-rt-' + user.id + '-' + Date.now())
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'orders', filter: 'order_type=eq.worker' },
         (payload) => {
-          if (payload.new?.status === 'pending' && notifSettings.enabled && notifSettings.vibration && notifSettings.new_orders) {
+          if (
+            payload.new?.status === 'pending' &&
+            notifSettings.enabled &&
+            notifSettings.vibration &&
+            notifSettings.new_orders
+          ) {
             Vibration.vibrate([0, 400, 200, 400]);
           }
-          // Use ref to always call the latest version of loadOrders (avoids stale closure)
           loadOrdersRef.current();
         }
       )
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' },
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders' },
         () => { loadOrdersRef.current(); }
       )
       .subscribe((status) => {
@@ -301,7 +317,14 @@ export default function WorkerDashboardScreen() {
           loadOrdersRef.current();
         }
       });
-    return () => { supabase.removeChannel(channel); };
+
+    return () => {
+      supabase.removeChannel(channel);
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    };
   };
 
   const startLocationTracking = async () => {
