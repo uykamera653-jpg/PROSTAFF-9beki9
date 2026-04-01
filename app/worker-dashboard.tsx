@@ -298,15 +298,13 @@ export default function WorkerDashboardScreen() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'orders', filter: 'order_type=eq.worker' },
         (payload) => {
-          if (payload.new?.status === 'pending' && notifSettings.enabled && notifSettings.new_orders) {
-            if (notifSettings.vibration) Vibration.vibrate([0, 400, 200, 400]);
-            if (notifSettings.sound !== false) {
-              playNotificationSound(
-                notifSettings.volume ?? 1.0,
-                'Yangi buyurtma!',
-                (payload.new?.title || 'Yangi ish buyurtmasi') + (payload.new?.location ? ' — ' + payload.new.location : '')
-              );
-            }
+          // Har doim ovoz va vibratsiya — settings shartsiz
+          if (payload.new?.status === 'pending') {
+            playNotificationSound(
+              notifSettings.volume ?? 1.0,
+              'Yangi buyurtma!',
+              (payload.new?.title || 'Yangi ish buyurtmasi') + (payload.new?.location ? ' — ' + payload.new.location : '')
+            ).catch(() => {});
           }
           loadOrdersRef.current();
         }

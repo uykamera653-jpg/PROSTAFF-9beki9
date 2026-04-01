@@ -12,7 +12,6 @@ import {
   Switch,
   Linking,
   Modal,
-  Vibration,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -215,13 +214,13 @@ export default function CompanyDashboardScreen() {
     }
   };
 
-  const handleNotificationSound = async (orderTitle?: string, orderLocation?: string) => {
-    if (!notifSettings.enabled || !notifSettings.sound || !notifSettings.new_orders) return;
-    await playNotificationSound(
+  // Har doim chaqiriladi — settings shartsiz
+  const handleNotificationSound = (orderTitle?: string, orderLocation?: string) => {
+    playNotificationSound(
       notifSettings.volume ?? 1.0,
       'Yangi buyurtma!',
       (orderTitle || 'Yangi xizmat buyurtmasi') + (orderLocation ? ' — ' + orderLocation : '')
-    );
+    ).catch(() => {});
   };
 
   const setupRealtime = () => {
@@ -233,10 +232,7 @@ export default function CompanyDashboardScreen() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders',
         filter: `target_company_id=eq.${user?.id}` }, async (payload) => {
         if (payload.new?.status === 'pending') {
-          if (notifSettings.enabled && notifSettings.vibration && notifSettings.new_orders) {
-            Vibration.vibrate([0, 400, 200, 400]);
-          }
-          await handleNotificationSound(payload.new?.title, payload.new?.location);
+          handleNotificationSound(payload.new?.title, payload.new?.location);
         }
         loadOrders();
       })
