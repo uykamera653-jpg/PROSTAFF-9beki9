@@ -7,35 +7,52 @@ import {
   TouchableOpacity,
   Dimensions,
   Linking,
-  Modal,
-  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
-import { useTranslation } from '../hooks/useTranslation';
-import { useCompanies } from '../hooks/useCompanies';
 import { useAuth } from '../hooks/useAuth';
-import { useReviews } from '../hooks/useReviews';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { spacing, typography, borderRadius } from '../constants/theme';
+import { supabase } from '../lib/supabase';
+
+interface CompanyData {
+  id: string;
+  company_name: string;
+  description: string;
+  phone: string;
+  images: string[];
+  rating: number;
+  completed_orders: number;
+  is_online: boolean;
+  avatar_url?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+interface Review {
+  id: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+  customer_id: string;
+  customer_name?: string;
+}
 
 export default function CompanyDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { t } = useTranslation();
-  const { getCompanyById } = useCompanies();
   const { user } = useAuth();
-  const { getCompanyReviews, addReview, getAverageRating } = useReviews();
 
-  const [showReviewModal, setShowReviewModal] = useState(false);
-  const [reviewRating, setReviewRating] = useState(5);
-  const [reviewComment, setReviewComment] = useState('');
+  const [company, setCompany] = useState<CompanyData | null>(null);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
   const [screenWidth, setScreenWidth] = useState(() => Math.max(375, Dimensions.get('window').width));
 
   useEffect(() => {
@@ -46,50 +63,101 @@ export default function CompanyDetailScreen() {
   }, []);
 
   const companyId = params.id as string;
-  const company = getCompanyById(companyId);
-  const reviews = getCompanyReviews(companyId);
-  const averageRating = getAverageRating(companyId) || company?.rating || 0;
 
-  if (!company) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <Text style={[styles.errorText, { color: theme.text }]}>
-          Firma topilmadi
-        </Text>
-      </View>
-    );
-  }
+  useEffect(() => {
+    if (companyId) {
+      loadCompany();
+      loadReviews();
+    }
+  }, [companyId]);
+
+  const loadCompany = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', companyId)
+        .single();
+
+      if (error) throw error;
+      setCompany(data);
+    } catch (e) {
+      setCompany(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadReviews = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('company_reviews')
+        .select('*, user_profiles(name)')
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (error) throw error;
+
+      const mapped = (data || []).map((r: any) => ({
+        id: r.id,
+        rating: r.rating,
+        comment: r.comment || '',
+        created_at: r.created_at,
+        customer_id: r.customer_id,
+        customer_name: r.user_profiles?.name || 'Foydalanuvchi',
+      }));
+      setReviews(mapped);
+    } catch {
+      setReviews([]);
+    }
+  };
 
   const handleCall = () => {
-    Linking.openURL(`tel:${company.phoneNumber}`);
+    if (company?.phone) Linking.openURL(`tel:${company.phone}`);
   };
 
   const handleOrder = () => {
+    if (!company) return;
     router.push({
       pathname: '/order-service',
       params: {
         companyId: company.id,
-        companyName: company.name,
-        serviceType: company.serviceType,
+        companyName: company.company_name,
+        serviceType: 'Xizmat buyurtmasi',
       },
     });
   };
 
-  const handleSubmitReview = async () => {
-    if (!user || !reviewComment.trim()) return;
-    
-    await addReview({
-      userId: user.id,
-      userName: user.name,
-      companyId,
-      rating: reviewRating,
-      comment: reviewComment.trim(),
-    });
+  if (loading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={theme.primary} />
+      </View>
+    );
+  }
 
-    setReviewComment('');
-    setReviewRating(5);
-    setShowReviewModal(false);
-  };
+  if (!company) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <Ionicons name="business-outline" size={64} color={theme.textTertiary} />
+        <Text style={[styles.errorText, { color: theme.text, marginTop: spacing.md }]}>
+          Firma topilmadi
+        </Text>
+        <Button title="Ortga" onPress={() => router.back()} style={{ marginTop: spacing.lg }} />
+      </View>
+    );
+  }
+
+  const photoUrls = Array.isArray(company.images) && company.images.length > 0
+    ? company.images
+    : ['https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800'];
+
+  const averageRating =
+    reviews.length > 0
+      ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
+      : company.rating || 0;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -98,7 +166,7 @@ export default function CompanyDetailScreen() {
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>
-          {company.name}
+          {company.company_name}
         </Text>
         <View style={styles.placeholder} />
       </View>
@@ -115,7 +183,7 @@ export default function CompanyDetailScreen() {
           showsHorizontalScrollIndicator={false}
           style={styles.imageGallery}
         >
-          {(company.photoUrls && company.photoUrls.length > 0 ? company.photoUrls : ['https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800']).map((url, index) => (
+          {photoUrls.map((url, index) => (
             <Image
               key={index}
               source={{ uri: url }}
@@ -128,109 +196,96 @@ export default function CompanyDetailScreen() {
         {/* Company Info */}
         <Card style={styles.infoCard}>
           <View style={styles.titleRow}>
-            <Text style={[styles.companyName, { color: theme.text }]}>
-              {company.name}
-            </Text>
-            <View style={styles.rating}>
-              <Ionicons name="star" size={20} color="#FFB800" />
-              <Text style={[styles.ratingText, { color: theme.text }]}>
-                {averageRating.toFixed(1)}
+            {company.avatar_url ? (
+              <Image
+                source={{ uri: company.avatar_url }}
+                style={styles.avatar}
+                contentFit="cover"
+                transition={200}
+              />
+            ) : (
+              <View style={[styles.avatarPlaceholder, { backgroundColor: theme.primary + '20' }]}>
+                <Ionicons name="business" size={28} color={theme.primary} />
+              </View>
+            )}
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.companyName, { color: theme.text }]}>
+                {company.company_name}
               </Text>
-              <Text style={[styles.reviewCount, { color: theme.textSecondary }]}>
-                ({reviews.length})
-              </Text>
+              <View style={styles.ratingRow}>
+                <Ionicons name="star" size={16} color="#FFB800" />
+                <Text style={[styles.ratingText, { color: theme.text }]}>
+                  {averageRating.toFixed(1)}
+                </Text>
+                <Text style={[styles.reviewCount, { color: theme.textSecondary }]}>
+                  ({reviews.length} sharh)
+                </Text>
+                <View style={[
+                  styles.onlineBadge,
+                  { backgroundColor: company.is_online ? '#10B981' + '20' : '#9CA3AF20' }
+                ]}>
+                  <View style={[
+                    styles.onlineDot,
+                    { backgroundColor: company.is_online ? '#10B981' : '#9CA3AF' }
+                  ]} />
+                  <Text style={[styles.onlineText, { color: company.is_online ? '#10B981' : '#9CA3AF' }]}>
+                    {company.is_online ? 'Online' : 'Offline'}
+                  </Text>
+                </View>
+              </View>
             </View>
           </View>
 
-          <View style={[styles.serviceTag, { backgroundColor: theme.primary + '15' }]}>
-            <Text style={[styles.serviceType, { color: theme.primary }]}>
-              {company.serviceType}
-            </Text>
+          <View style={styles.statsRow}>
+            <View style={[styles.statBox, { backgroundColor: theme.surfaceVariant }]}>
+              <Ionicons name="checkmark-circle" size={20} color={theme.success} />
+              <Text style={[styles.statValue, { color: theme.text }]}>{company.completed_orders || 0}</Text>
+              <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Bajarilgan</Text>
+            </View>
+            <View style={[styles.statBox, { backgroundColor: theme.surfaceVariant }]}>
+              <Ionicons name="star" size={20} color="#FFB800" />
+              <Text style={[styles.statValue, { color: theme.text }]}>{averageRating.toFixed(1)}</Text>
+              <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Reyting</Text>
+            </View>
+            <View style={[styles.statBox, { backgroundColor: theme.surfaceVariant }]}>
+              <Ionicons name="chatbubble" size={20} color={theme.primary} />
+              <Text style={[styles.statValue, { color: theme.text }]}>{reviews.length}</Text>
+              <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Sharh</Text>
+            </View>
           </View>
 
-          <View style={styles.infoRow}>
-            <Ionicons name="time" size={20} color={theme.textSecondary} />
-            <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-              {company.workingHours}
-            </Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <Ionicons name="briefcase" size={20} color={theme.textSecondary} />
-            <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-              {t.experience}: {company.experience}
-            </Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <Ionicons name="location" size={20} color={theme.textSecondary} />
-            <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-              {company.address}
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.phoneRow, { borderTopColor: theme.border }]}
-            onPress={handleCall}
-          >
-            <Ionicons name="call" size={20} color={theme.primary} />
-            <Text style={[styles.phoneText, { color: theme.primary }]}>
-              {company.phoneNumber}
-            </Text>
-            <Ionicons name="chevron-forward" size={20} color={theme.textTertiary} />
-          </TouchableOpacity>
+          {company.phone ? (
+            <TouchableOpacity
+              style={[styles.phoneRow, { borderColor: theme.primary + '30', backgroundColor: theme.primary + '08' }]}
+              onPress={handleCall}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="call" size={20} color={theme.primary} />
+              <Text style={[styles.phoneText, { color: theme.primary }]}>
+                {company.phone}
+              </Text>
+              <Ionicons name="chevron-forward" size={18} color={theme.primary} />
+            </TouchableOpacity>
+          ) : null}
         </Card>
 
         {/* About */}
-        <Card>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            {t.aboutCompany}
-          </Text>
-          <Text style={[styles.description, { color: theme.textSecondary }]}>
-            {company.description}
-          </Text>
-        </Card>
-
-        {/* Services */}
-        <Card>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            {t.services}
-          </Text>
-          <View style={styles.servicesList}>
-            {(company.services || []).map((service, index) => (
-              <View
-                key={index}
-                style={[styles.serviceItem, { backgroundColor: theme.surfaceVariant }]}
-              >
-                <Ionicons name="checkmark-circle" size={20} color={theme.success} />
-                <Text style={[styles.serviceText, { color: theme.text }]}>
-                  {service}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </Card>
+        {company.description ? (
+          <Card>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Firma haqida</Text>
+            <Text style={[styles.description, { color: theme.textSecondary }]}>
+              {company.description}
+            </Text>
+          </Card>
+        ) : null}
 
         {/* Reviews */}
         <Card>
-          <View style={styles.reviewsHeader}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>
-              {t.reviews}
-            </Text>
-            <TouchableOpacity
-              style={[styles.writeReviewButton, { backgroundColor: theme.primary + '15' }]}
-              onPress={() => setShowReviewModal(true)}
-            >
-              <Ionicons name="create" size={16} color={theme.primary} />
-              <Text style={[styles.writeReviewText, { color: theme.primary }]}>
-                {t.writeReview}
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Sharhlar</Text>
 
           {reviews.length === 0 ? (
             <Text style={[styles.noReviews, { color: theme.textSecondary }]}>
-              {t.noOrders}
+              Hali sharh qoldirilmagan
             </Text>
           ) : (
             <View style={styles.reviewsList}>
@@ -241,24 +296,26 @@ export default function CompanyDetailScreen() {
                 >
                   <View style={styles.reviewHeader}>
                     <Text style={[styles.reviewerName, { color: theme.text }]}>
-                      {review.userName}
+                      {review.customer_name}
                     </Text>
                     <View style={styles.reviewRating}>
                       {[...Array(5)].map((_, i) => (
                         <Ionicons
                           key={i}
                           name={i < review.rating ? 'star' : 'star-outline'}
-                          size={14}
+                          size={13}
                           color="#FFB800"
                         />
                       ))}
                     </View>
                   </View>
-                  <Text style={[styles.reviewComment, { color: theme.textSecondary }]}>
-                    {review.comment}
-                  </Text>
+                  {review.comment ? (
+                    <Text style={[styles.reviewComment, { color: theme.textSecondary }]}>
+                      {review.comment}
+                    </Text>
+                  ) : null}
                   <Text style={[styles.reviewDate, { color: theme.textTertiary }]}>
-                    {new Date(review.createdAt).toLocaleDateString()}
+                    {new Date(review.created_at).toLocaleDateString('uz-UZ')}
                   </Text>
                 </View>
               ))}
@@ -266,73 +323,29 @@ export default function CompanyDetailScreen() {
           )}
         </Card>
 
-        <Button
-          title={t.orderService}
-          onPress={handleOrder}
-          size="large"
-          style={styles.orderButton}
-        />
+        {/* Order button */}
+        {company.is_online ? (
+          <Button
+            title="Xizmat buyurtma qilish"
+            onPress={handleOrder}
+            size="large"
+            style={styles.orderButton}
+          />
+        ) : (
+          <Card style={[styles.offlineCard, { backgroundColor: '#9CA3AF15' }]}>
+            <Ionicons name="wifi-outline" size={24} color="#9CA3AF" />
+            <Text style={[styles.offlineText, { color: theme.textSecondary }]}>
+              Firma hozir offline — buyurtma berish mumkin emas
+            </Text>
+          </Card>
+        )}
       </ScrollView>
-
-      {/* Review Modal */}
-      <Modal visible={showReviewModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>
-              {t.writeReview}
-            </Text>
-
-            <Text style={[styles.ratingLabel, { color: theme.text }]}>
-              {t.giveRating}
-            </Text>
-            <View style={styles.starRating}>
-              {[1, 2, 3, 4, 5].map((star) => (
-                <TouchableOpacity
-                  key={star}
-                  onPress={() => setReviewRating(star)}
-                >
-                  <Ionicons
-                    name={star <= reviewRating ? 'star' : 'star-outline'}
-                    size={32}
-                    color="#FFB800"
-                  />
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <TextInput
-              style={[styles.reviewInput, { backgroundColor: theme.surfaceVariant, color: theme.text }]}
-              value={reviewComment}
-              onChangeText={setReviewComment}
-              placeholder={t.reviewPlaceholder}
-              placeholderTextColor={theme.textTertiary}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
-
-            <View style={styles.modalButtons}>
-              <Button
-                title={t.cancel}
-                onPress={() => setShowReviewModal(false)}
-                variant="outline"
-              />
-              <Button
-                title={t.submitReview}
-                onPress={handleSubmitReview}
-              />
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -340,149 +353,124 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
   },
-  backButton: {
-    width: 40,
-  },
+  backButton: { width: 40 },
   headerTitle: {
     ...typography.h3,
     flex: 1,
     textAlign: 'center',
     marginHorizontal: spacing.sm,
   },
-  placeholder: {
-    width: 40,
-  },
-  content: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: spacing.xxl,
-  },
-  imageGallery: {
-    height: 300,
-  },
-  image: {
-    width: 375,
-    height: 300,
-  },
-  infoCard: {
-    margin: spacing.lg,
-  },
+  placeholder: { width: 40 },
+  content: { flex: 1 },
+  scrollContent: { paddingBottom: spacing.xxl },
+  imageGallery: { height: 260 },
+  image: { height: 260 },
+  infoCard: { margin: spacing.lg },
   titleRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  companyName: {
-    ...typography.h2,
-    flex: 1,
-    marginRight: spacing.sm,
-  },
-  rating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs / 2,
-  },
-  ratingText: {
-    ...typography.h3,
-    fontSize: 18,
-  },
-  reviewCount: {
-    ...typography.caption,
-    marginLeft: spacing.xs / 2,
-  },
-  serviceTag: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.sm,
+    gap: spacing.md,
     marginBottom: spacing.md,
   },
-  serviceType: {
-    ...typography.bodyMedium,
-    fontWeight: '600',
+  avatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
   },
-  infoRow: {
+  avatarPlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  companyName: {
+    ...typography.h3,
+    fontWeight: '700',
+    marginBottom: spacing.xs / 2,
+  },
+  ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
+    gap: spacing.xs,
+    flexWrap: 'wrap',
   },
-  infoText: {
-    ...typography.body,
+  ratingText: {
+    ...typography.bodyMedium,
+    fontWeight: '700',
+  },
+  reviewCount: {
+    ...typography.small,
+  },
+  onlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  onlineDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  onlineText: {
+    ...typography.small,
+    fontWeight: '600',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  statBox: {
     flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    gap: spacing.xs / 2,
+  },
+  statValue: {
+    ...typography.h4,
+    fontWeight: '700',
+  },
+  statLabel: {
+    ...typography.small,
+    textAlign: 'center',
   },
   phoneRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingTop: spacing.md,
-    marginTop: spacing.md,
-    borderTopWidth: 1,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
   },
   phoneText: {
     ...typography.bodyMedium,
-    fontSize: 16,
+    fontWeight: '600',
     flex: 1,
   },
   sectionTitle: {
-    ...typography.h3,
+    ...typography.h4,
+    fontWeight: '700',
     marginBottom: spacing.md,
   },
   description: {
     ...typography.body,
     lineHeight: 24,
   },
-  servicesList: {
-    gap: spacing.sm,
-  },
-  serviceItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-  },
-  serviceText: {
-    ...typography.bodyMedium,
-    flex: 1,
-  },
-  orderButton: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-  },
   errorText: {
     ...typography.h3,
     textAlign: 'center',
-    marginTop: spacing.xxl,
-  },
-  reviewsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  writeReviewButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: 8,
-  },
-  writeReviewText: {
-    ...typography.small,
-    fontWeight: '600',
   },
   noReviews: {
     ...typography.body,
     textAlign: 'center',
     paddingVertical: spacing.lg,
   },
-  reviewsList: {
-    gap: spacing.md,
-  },
+  reviewsList: { gap: spacing.md },
   reviewItem: {
     paddingBottom: spacing.md,
     borderBottomWidth: 1,
@@ -506,43 +494,22 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: spacing.xs,
   },
-  reviewDate: {
-    ...typography.small,
+  reviewDate: { ...typography.small },
+  orderButton: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
+  offlineCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  modalContent: {
-    width: '90%',
-    maxWidth: 500,
-    padding: spacing.xl,
-    borderRadius: borderRadius.lg,
-  },
-  modalTitle: {
-    ...typography.h2,
-    marginBottom: spacing.lg,
-  },
-  ratingLabel: {
-    ...typography.bodyMedium,
-    marginBottom: spacing.sm,
-  },
-  starRating: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  reviewInput: {
-    ...typography.body,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    minHeight: 100,
-    marginBottom: spacing.lg,
-  },
-  modalButtons: {
-    flexDirection: 'row',
     gap: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+  },
+  offlineText: {
+    ...typography.body,
+    flex: 1,
   },
 });
