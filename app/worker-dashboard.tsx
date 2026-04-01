@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -83,6 +83,7 @@ export default function WorkerDashboardScreen() {
   const [orderTimers, setOrderTimers] = useState<{ [orderId: string]: number }>({});
   const { showAlert, AlertComponent } = useAlert();
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
+  const loadOrdersRef = useRef<() => void>(() => {});
   
   // Push notifications
   const { settings: notifSettings } = useNotificationSettings();
@@ -114,6 +115,11 @@ export default function WorkerDashboardScreen() {
     }
   }, [user, role, roleLoading]);
 
+  // Keep loadOrdersRef always pointing to the latest loadOrders
+  useEffect(() => {
+    loadOrdersRef.current = loadOrders;
+  });
+
   // 30-second timer for pending orders
   useEffect(() => {
     if (selectedTab !== 'pending' || orders.length === 0) return;
@@ -141,6 +147,14 @@ export default function WorkerDashboardScreen() {
     return () => clearInterval(interval);
   }, [selectedTab, orders]);
 
+  // Load orders when tab changes
+  useEffect(() => {
+    if (workerProfile && isOnline) {
+      loadOrders();
+    }
+  }, [selectedTab]);
+
+  // Setup realtime subscription ONCE when worker goes online — independent of selectedTab
   useEffect(() => {
     if (workerProfile && isOnline) {
       loadOrders();
@@ -151,11 +165,10 @@ export default function WorkerDashboardScreen() {
         stopLocationTracking();
       };
     } else if (workerProfile && !isOnline) {
-      // Clear orders when offline
       setOrders([]);
       stopLocationTracking();
     }
-  }, [workerProfile, selectedTab, isOnline]);
+  }, [workerProfile, isOnline]);
 
   const checkWorkerProfile = async () => {
     try {
@@ -270,19 +283,24 @@ export default function WorkerDashboardScreen() {
   const setupRealtimeSubscription = () => {
     if (!user?.id) return () => {};
     const channel = supabase
-      .channel('worker-orders-' + user.id)
+      .channel('worker-orders-rt-' + user.id)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' },
         (payload) => {
           if (payload.new?.status === 'pending' && notifSettings.enabled && notifSettings.vibration && notifSettings.new_orders) {
             Vibration.vibrate([0, 400, 200, 400]);
           }
-          loadOrders();
+          // Use ref to always call the latest version of loadOrders (avoids stale closure)
+          loadOrdersRef.current();
         }
       )
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' },
-        () => { loadOrders(); }
+        () => { loadOrdersRef.current(); }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          loadOrdersRef.current();
+        }
+      });
     return () => { supabase.removeChannel(channel); };
   };
 
