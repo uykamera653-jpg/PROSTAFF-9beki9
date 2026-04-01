@@ -204,35 +204,42 @@ export default function MyAdsScreen() {
         schema: 'public',
         table: 'orders',
         filter: `customer_id=eq.${user.id}`,
-      }, () => { loadOrders(); })
+      }, (payload) => {
+        // Real-vaqt yangilanish: accepted_workers o'zgarganda darhol ko'rsatish
+        if (payload.eventType === 'UPDATE' && payload.new) {
+          setOrders(prev => prev.map(o => o.id === payload.new.id ? { ...o, ...payload.new } : o));
+        } else {
+          loadOrders();
+        }
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   };
 
-  const handleCancelOrder = (orderId: string) => {
-    const doCancel = async () => {
-      try {
-        const { error } = await supabase
-          .from('orders')
-          .update({ status: 'cancelled' })
-          .eq('id', orderId)
-          .eq('customer_id', user?.id);
-        if (error) throw error;
-        setOrders((prev) => prev.filter((o) => o.id !== orderId));
-      } catch (err: any) {
-        Alert.alert('Xatolik', "Buyurtmani bekor qilib bo'lmadi");
-      }
-    };
+  const handleCancelOrder = async (orderId: string) => {
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'cancelled' })
+        .eq('id', orderId)
+        .eq('customer_id', user!.id);
+      if (error) throw error;
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    } catch (err: any) {
+      Alert.alert('Xatolik', "Buyurtmani bekor qilib bo'lmadi: " + (err.message || ''));
+    }
+  };
 
+  const confirmCancelOrder = (orderId: string) => {
     if (Platform.OS === 'web') {
-      if (window.confirm('Bu buyurtmani bekor qilishni tasdiqlaysizmi?')) doCancel();
+      if (window.confirm('Bu buyurtmani bekor qilishni tasdiqlaysizmi?')) handleCancelOrder(orderId);
     } else {
       Alert.alert(
         'Bekor qilish',
         'Bu buyurtmani bekor qilishni tasdiqlaysizmi?',
         [
           { text: "Yo'q", style: 'cancel' },
-          { text: 'Ha, bekor qilish', style: 'destructive', onPress: doCancel },
+          { text: 'Ha, bekor qilish', style: 'destructive', onPress: () => handleCancelOrder(orderId) },
         ]
       );
     }
@@ -419,11 +426,11 @@ export default function MyAdsScreen() {
               {item.status === 'pending' && (
                 <TouchableOpacity
                   onPress={(e) => {
-                    e.stopPropagation?.();
-                    handleCancelOrder(item.id);
+                    (e as any).stopPropagation?.();
+                    confirmCancelOrder(item.id);
                   }}
                   style={[styles.cancelBtn, { backgroundColor: '#F59E0B15', borderColor: '#F59E0B' }]}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   <Ionicons name="close-circle-outline" size={13} color="#F59E0B" />
                   <Text style={[styles.cancelBtnText, { color: '#F59E0B' }]}>Bekor</Text>

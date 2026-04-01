@@ -190,6 +190,7 @@ export default function PostJobScreen() {
           images: imageUrl ? [imageUrl] : [],
           customer_phone: phoneNumber.trim() || '+998',
           status: 'pending',
+          order_type: 'worker',
           expires_at: expiresAt,
         })
         .select()

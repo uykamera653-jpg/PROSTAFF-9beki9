@@ -125,10 +125,10 @@ export default function WorkerDashboardScreen() {
           const createdAt = new Date(order.created_at).getTime();
           const now = Date.now();
           const elapsed = Math.floor((now - createdAt) / 1000);
-          const remaining = Math.max(0, 30 - elapsed);
+          const remaining = Math.max(0, 300 - elapsed);
           updated[orderId] = remaining;
 
-          // Auto-reject when timer expires
+          // Auto-reject when timer expires (5 minutes)
           if (remaining === 0 && prev[orderId] !== 0) {
             handleRejectOrder(orderId, true); // silent reject
           }
@@ -256,13 +256,16 @@ export default function WorkerDashboardScreen() {
     if (!user?.id) return () => {};
     const channel = supabase
       .channel('worker-orders-' + user.id)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' },
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' },
         (payload) => {
-          if (payload.eventType === 'INSERT' && payload.new?.status === 'pending' && notifSettings.enabled && notifSettings.vibration && notifSettings.new_orders) {
+          if (payload.new?.status === 'pending' && notifSettings.enabled && notifSettings.vibration && notifSettings.new_orders) {
             Vibration.vibrate([0, 400, 200, 400]);
           }
           loadOrders();
         }
+      )
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' },
+        () => { loadOrders(); }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -496,7 +499,7 @@ export default function WorkerDashboardScreen() {
                 <View style={[styles.timerBadge, { backgroundColor: theme.warning + '15' }]}>
                   <Ionicons name="timer" size={16} color={theme.warning} />
                   <Text style={[styles.timerText, { color: theme.warning }]}>
-                    {minutes}:{seconds.toString().padStart(2, '0')}
+                    Ko'rish vaqti: {minutes}:{seconds.toString().padStart(2, '0')}
                   </Text>
                 </View>
               )}
