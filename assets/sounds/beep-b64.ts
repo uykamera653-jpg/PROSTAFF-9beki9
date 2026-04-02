@@ -50,14 +50,21 @@ function buildBeepWav(): string {
     dv.setInt16(44 + i * 2, Math.round(v * 32767), true);
   }
 
-  // Convert to base64
+    // Convert to base64 — React Native compatible (no btoa)
   const u8 = new Uint8Array(buf);
-  let s = '';
-  const chunk = 8192;
-  for (let i = 0; i < u8.length; i += chunk) {
-    s += String.fromCharCode(...u8.subarray(i, i + chunk));
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let result = '';
+  let i = 0;
+  while (i < u8.length) {
+    const a = u8[i++];
+    const b = i < u8.length ? u8[i++] : 0;
+    const c = i < u8.length ? u8[i++] : 0;
+    result += chars[a >> 2];
+    result += chars[((a & 3) << 4) | (b >> 4)];
+    result += i - 2 < u8.length ? chars[((b & 15) << 2) | (c >> 6)] : '=';
+    result += i - 1 < u8.length ? chars[c & 63] : '=';
   }
-  return btoa(s);
+  return result;
 }
 
 // Compute once at module load and export as a frozen constant
