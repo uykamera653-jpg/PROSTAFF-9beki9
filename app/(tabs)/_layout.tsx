@@ -38,7 +38,7 @@ export default function TabLayout() {
             android: insets.bottom + 8,
             default: 8,
           }),
-          paddingHorizontal: 10,
+          paddingHorizontal: 50,
         },
         tabBarLabelStyle: {
           fontSize: 12,
