@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import { View, Text } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SettingsProvider } from '../contexts/SettingsContext';
@@ -11,6 +13,22 @@ import { AppConfigProvider } from '../contexts/AppConfigContext';
 import { NotificationSettingsProvider } from '../contexts/NotificationSettingsContext';
 
 export default function RootLayout() {
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setTimeout(() => {
+      setLoading(false);
+    }, 1500);
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={{flex:1, justifyContent:'center', alignItems:'center'}}>
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
+
   return (
     <AppConfigProvider>
       <SettingsProvider>
